@@ -1,0 +1,14 @@
+{
+  "name": "Bethel International Church",
+  "short_name": "Bethel NYC",
+  "description": "Bethel International Church New York",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a3a6b",
+  "theme_color": "#1a3a6b",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/logo192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/logo512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

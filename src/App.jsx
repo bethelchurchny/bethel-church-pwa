@@ -4,7 +4,7 @@ import { Html5QrcodeScanner } from 'html5-qrcode';
 import { auth, db, storage, messaging, getToken, VAPID_KEY } from './firebase';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
-import { doc, setDoc, getDoc, collection, addDoc, deleteDoc, query, orderBy, onSnapshot, updateDoc, getDocs, where } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, addDoc, deleteDoc, query, orderBy, onSnapshot, updateDoc, getDocs, where, arrayUnion } from 'firebase/firestore';
 
 const LOGO_URL = '/logo.png';
 const th = {
@@ -202,7 +202,7 @@ const RegisterScreen=({lang,setLang,onBack,onRegistered})=>{
     try{
       const cred=await createUserWithEmailAndPassword(auth,email,pw);
       await setDoc(doc(db,'members',cred.user.uid),{name,email,phone,role:'member',joinDate:new Date().toLocaleDateString(),createdAt:new Date().toISOString()});
-      await addDoc(collection(db,'notifications'),{type:'new_member',userName:name,userEmail:email,date:new Date().toLocaleDateString(),timestamp:new Date().toISOString(),read:false});
+      await addDoc(collection(db,'notifications'),{type:'new_member',userName:name,userEmail:email,date:new Date().toLocaleDateString(),timestamp:new Date().toISOString(),readBy:[]});
       onRegistered();
     }catch(e){
       if(e.code==='auth/email-already-in-use')setErr(lang==='id'?'Email sudah terdaftar':'Email already registered');
@@ -237,6 +237,17 @@ const RegisterScreen=({lang,setLang,onBack,onRegistered})=>{
 
 const HomeScreen=({user,onNav,lang,lp={}})=>{
   const [eventPosts,setEventPosts]=useState([]);
+  const [showAppQR,setShowAppQR]=useState(false);
+  const [todayDevo,setTodayDevo]=useState(null);
+  useEffect(()=>{
+    const days=['sun','mon','tue','wed','thu','fri','sat'];
+    const todayKey=days[new Date().getDay()];
+    const unsubDevo=onSnapshot(query(collection(db,'bulletins'),orderBy('timestamp','desc')),snap=>{
+      const devos=snap.docs.map(d=>({id:d.id,...d.data()})).filter(b=>b.cat==='devotional'&&b.subType==='daily_devotional'&&b.dayOfWeek===todayKey);
+      setTodayDevo(devos.length>0?devos[0]:null);
+    });
+    return unsubDevo;
+  },[]);
   useEffect(()=>{
     const unsub=onSnapshot(query(collection(db,'bulletins'),orderBy('timestamp','desc')),snap=>{
       const today=new Date().toISOString().split('T')[0];
@@ -334,6 +345,19 @@ const HomeScreen=({user,onNav,lang,lp={}})=>{
             </button>
           </div>
         )}
+        {todayDevo&&(
+          <div onClick={()=>{onNav('bulletin',{...todayDevo,_categoryOnly:false});}} style={{backgroundColor:'#fef9e7',borderRadius:18,padding:16,marginBottom:16,cursor:'pointer',boxShadow:'0 2px 8px rgba(183,121,31,0.1)',border:'1.5px solid #b7791f30'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+              <span style={{fontSize:22}}>☀️</span>
+              <div>
+                <div style={{fontSize:10,fontWeight:700,color:'#b7791f',textTransform:'uppercase',letterSpacing:1}}>{lang==='id'?'Renungan Harian Hari Ini':"Today's Daily Devotional"}</div>
+                <div style={{fontSize:13,color:'#b7791f',fontWeight:600}}>{({sun:lang==='id'?'Minggu':'Sunday',mon:lang==='id'?'Senin':'Monday',tue:lang==='id'?'Selasa':'Tuesday',wed:lang==='id'?'Rabu':'Wednesday',thu:lang==='id'?'Kamis':'Thursday',fri:lang==='id'?'Jumat':'Friday',sat:lang==='id'?'Sabtu':'Saturday'})[todayDevo.dayOfWeek]}</div>
+              </div>
+            </div>
+            <div style={{fontSize:15,fontWeight:700,color:th.text,marginBottom:4}}>{(lang==='id'?(todayDevo.titleId||todayDevo.title):(todayDevo.title||todayDevo.titleId))||(lang==='id'?'Baca Renungan':'Read Devotional')}</div>
+            <div style={{fontSize:12,color:'#b7791f',fontWeight:600}}>{lang==='id'?'Tap untuk baca →':"Tap to read →"}</div>
+          </div>
+        )}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
           {quickCards.map(c=>(
             <div key={c.key} onClick={()=>onNav(c.key)}
@@ -386,7 +410,7 @@ const HomeScreen=({user,onNav,lang,lp={}})=>{
             </div>
           </button>
           <button onClick={exportMembers}
-              style={{width:'100%',backgroundColor:`${th.primary}10`,border:`2px solid ${th.primary}`,borderRadius:14,padding:'12px 16px',cursor:'pointer',display:'flex',alignItems:'center',gap:12,fontSize:14,fontWeight:700,color:th.primary}}>
+              style={{width:'100%',backgroundColor:`${th.primary}10`,border:`2px solid ${th.primary}`,borderRadius:14,padding:'12px 16px',cursor:'pointer',display:'flex',alignItems:'center',gap:12,fontSize:14,fontWeight:700,color:th.primary,marginBottom:10}}>
               <span style={{fontSize:24}}>📊</span>
               <div style={{textAlign:'left'}}>
                 <div>{lang==='id'?'Export Data Member':'Export Member Data'}</div>
@@ -394,8 +418,28 @@ const HomeScreen=({user,onNav,lang,lp={}})=>{
               </div>
               <span style={{marginLeft:'auto',fontSize:18}}>↓</span>
             </button>
+            <button onClick={()=>setShowAppQR(true)}
+              style={{width:'100%',backgroundColor:'#e8f4e8',border:'2px solid #38a169',borderRadius:14,padding:'12px 16px',cursor:'pointer',display:'flex',alignItems:'center',gap:12,fontSize:14,fontWeight:700,color:'#38a169'}}>
+              <span style={{fontSize:24}}>📲</span>
+              <div style={{textAlign:'left'}}>
+                <div>{lang==='id'?'QR Code Download App':'App Download QR Code'}</div>
+                <div style={{fontSize:11,fontWeight:400,color:th.textMid,marginTop:2}}>{lang==='id'?'Share ke jemaat baru':'Share with new members'}</div>
+              </div>
+            </button>
           </div>
         )}
+      {showAppQR&&(
+        <div style={{position:'fixed',top:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:430,height:'100vh',backgroundColor:'rgba(0,0,0,0.7)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowAppQR(false)}>
+          <div style={{backgroundColor:'white',borderRadius:24,padding:32,textAlign:'center',margin:20}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:18,fontWeight:700,color:th.primary,marginBottom:4}}>Bethel International Church</div>
+            <div style={{fontSize:13,color:th.textMid,marginBottom:20}}>Elmhurst, New York</div>
+            <QRCode value="https://bethel-nyc.vercel.app" size={200} fgColor="#1a3a6b" level="H"/>
+            <div style={{fontSize:14,fontWeight:700,color:th.primary,marginTop:16,marginBottom:4}}>{lang==='id'?'📱 Scan untuk Download App':'📱 Scan to Download App'}</div>
+            <div style={{fontSize:12,color:th.textMid,marginBottom:20}}>bethel-nyc.vercel.app</div>
+            <button onClick={()=>setShowAppQR(false)} style={{width:'100%',backgroundColor:th.primary,border:'none',borderRadius:12,padding:'12px',color:'white',fontWeight:700,fontSize:14,cursor:'pointer'}}>{lang==='id'?'Tutup':'Close'}</button>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );
@@ -886,6 +930,7 @@ const BulletinScreen=({user,lang,directPost,clearDirectPost,lp={}})=>{
   const [selectedPost,setSelectedPost]=useState(null);
   const [view,setView]=useState('list');
   const [title,setTitle]=useState('');
+  const [titleId,setTitleId]=useState('');
   const [content,setContent]=useState('');
   const [contentId,setContentId]=useState('');
   const [eventDate,setEventDate]=useState('');
@@ -944,19 +989,19 @@ const BulletinScreen=({user,lang,directPost,clearDirectPost,lp={}})=>{
     const isWeekDaysType = subType==='reading_plan';
     if(!isWeekDaysType && !content&&!contentId)return;
     const payload = isWeekDaysType
-      ? {title,subType,weekDays,cat:selectedCat,eventDate,textAlign,imageUrl}
+      ? {title,titleId,subType,weekDays,cat:selectedCat,eventDate,textAlign,imageUrl}
       : subType==='daily_devotional'
-        ? {title,subType,content,contentId,dayOfWeek,cat:selectedCat,eventDate,textAlign,imageUrl}
-        : {title,subType,content,contentId,eventDate,textAlign,imageUrl};
+        ? {title,titleId,subType,content,contentId,dayOfWeek,cat:selectedCat,eventDate,textAlign,imageUrl}
+        : {title,titleId,subType,content,contentId,eventDate,textAlign,imageUrl};
     if(editingPost){
       await updateDoc(doc(db,'bulletins',editingPost.id),payload);
       setEditingPost(null);
     }else{
       await addDoc(collection(db,'bulletins'),{...payload,cat:selectedCat,userId:user.uid,userName:user.name,date:new Date().toLocaleDateString(),timestamp:new Date().toISOString()});
       const catLabel=selectedSubType?devSubConfig[selectedSubType]?.label:catConfig[selectedCat]?.label;
-      await addDoc(collection(db,'notifications'),{type:'new_bulletin',title:title||(lang==='id'?'Post baru':'New post'),category:catLabel||selectedCat,userName:user.name,date:new Date().toLocaleDateString(),timestamp:new Date().toISOString(),read:false});
+      await addDoc(collection(db,'notifications'),{type:'new_bulletin',title:title||(lang==='id'?'Post baru':'New post'),category:catLabel||selectedCat,cat:selectedCat,subType:selectedSubType||'general',userName:user.name,date:new Date().toLocaleDateString(),timestamp:new Date().toISOString(),readBy:[]});
     }
-    setTitle('');setContent('');setContentId('');setEventDate('');setTextAlign('left');setImageUrl('');setSubType('general');
+    setTitle('');setTitleId('');setContent('');setContentId('');setEventDate('');setTextAlign('left');setImageUrl('');setSubType('general');
     setWeekDays({mon:{en:'',id:''},tue:{en:'',id:''},wed:{en:'',id:''},thu:{en:'',id:''},fri:{en:'',id:''},sat:{en:'',id:''},sun:{en:'',id:''}});
     setView('list');
   };
@@ -965,6 +1010,7 @@ const BulletinScreen=({user,lang,directPost,clearDirectPost,lp={}})=>{
     setSelectedPost(null);
     setEditingPost(post);
     setTitle(post.title||'');
+    setTitleId(post.titleId||'');
     setContent(post.content||'');
     setContentId(post.contentId||'');
     setEventDate(post.eventDate||'');
@@ -1029,7 +1075,7 @@ const BulletinScreen=({user,lang,directPost,clearDirectPost,lp={}})=>{
               </div>
             </div>
           ):(
-            <div style={{color:'white',fontSize:22,fontWeight:800,lineHeight:1.4}}>{selectedPost.title||dispContent?.slice(0,40)}</div>
+            <div style={{color:'white',fontSize:22,fontWeight:800,lineHeight:1.4}}>{(lang==='id'?(selectedPost.titleId||selectedPost.title):(selectedPost.title||selectedPost.titleId))||dispContent?.slice(0,40)}</div>
           )}
           {selectedPost.subType!=='reading_plan'&&<div style={{color:'rgba(255,255,255,0.6)',fontSize:12,marginTop:8}}>{idx+1}/{catItems.length}</div>}
         </div>
@@ -1098,6 +1144,18 @@ const BulletinScreen=({user,lang,directPost,clearDirectPost,lp={}})=>{
           <button onClick={()=>{setSelectedPost(null);if(selectedPost?.subType==='reading_plan')setSelectedSubType(null);}} style={{width:'100%',marginTop:16,backgroundColor:cfg.bg,border:'none',borderRadius:14,padding:14,color:cfg.color,fontWeight:700,cursor:'pointer',fontSize:14}}>← {lang==='id'?'Kembali':'Back'}</button>
           {(user.role==='admin'||(user.role==='leader'&&lp.bulletin))&&selectedPost.subType==='reading_plan'&&<button onClick={()=>handleEditClick(selectedPost)} style={{width:'100%',marginTop:10,backgroundColor:`${th.primary}10`,border:`1px solid ${th.primary}30`,borderRadius:14,padding:14,color:th.primary,fontWeight:700,cursor:'pointer',fontSize:14}}>✏️ {lang==='id'?'Edit Post':'Edit Post'}</button>}
           {(user.role==='admin'||(user.role==='leader'&&lp.bulletin))&&<button onClick={async()=>{await handleDelete(selectedPost.id);setSelectedPost(null);if(selectedPost.subType==='reading_plan')setSelectedSubType(null);}} style={{width:'100%',marginTop:10,backgroundColor:'#fff0f0',border:`1px solid ${th.danger}30`,borderRadius:14,padding:14,color:th.danger,fontWeight:700,cursor:'pointer',fontSize:14}}>🗑 {lang==='id'?'Hapus Post':'Delete Post'}</button>}
+          {(user.role==='admin'||(user.role==='leader'&&lp.bulletin))&&selectedPost.subType==='reading_plan'&&<button onClick={async()=>{
+            if(!window.confirm(lang==='id'?'Hapus SEMUA post Bible Reading Plan? Tindakan ini tidak bisa dibatalkan.':'Delete ALL Bible Reading Plan posts? This cannot be undone.')) return;
+            const items=bulletins.filter(b=>b.cat==='devotional'&&(b.subType||'general')==='reading_plan');
+            await Promise.all(items.map(b=>deleteDoc(doc(db,'bulletins',b.id))));
+            setSelectedPost(null);setSelectedSubType(null);
+          }} style={{width:'100%',marginTop:10,backgroundColor:'#fff0f0',border:`1px solid ${th.danger}`,borderRadius:14,padding:14,color:th.danger,fontWeight:700,cursor:'pointer',fontSize:14}}>🗑 {lang==='id'?'Hapus Semua Reading Plan':'Clear All Reading Plan'}</button>}
+          {(user.role==='admin'||(user.role==='leader'&&lp.bulletin))&&selectedPost.subType==='daily_devotional'&&<button onClick={async()=>{
+            if(!window.confirm(lang==='id'?'Hapus SEMUA post Daily Devotional? Tindakan ini tidak bisa dibatalkan.':'Delete ALL Daily Devotional posts? This cannot be undone.')) return;
+            const items=bulletins.filter(b=>b.cat==='devotional'&&(b.subType||'general')==='daily_devotional');
+            await Promise.all(items.map(b=>deleteDoc(doc(db,'bulletins',b.id))));
+            setSelectedPost(null);setSelectedSubType(null);
+          }} style={{width:'100%',marginTop:10,backgroundColor:'#fff0f0',border:`1px solid ${th.danger}`,borderRadius:14,padding:14,color:th.danger,fontWeight:700,cursor:'pointer',fontSize:14}}>🗑 {lang==='id'?'Hapus Semua Daily Devotional':'Clear All Daily Devotional'}</button>}
         </div>
         <button onClick={()=>{const el=document.getElementById('bulletin-detail-scroll');if(el)el.scrollTo({top:0,behavior:'smooth'});}}
           style={{position:'fixed',bottom:90,right:20,width:48,height:48,borderRadius:24,backgroundColor:cfg.color,border:'none',boxShadow:'0 4px 12px rgba(0,0,0,0.2)',cursor:'pointer',fontSize:20,color:'white',zIndex:50}}>
@@ -1176,9 +1234,16 @@ const BulletinScreen=({user,lang,directPost,clearDirectPost,lp={}})=>{
           )}
           {view==='write'&&(user.role==='admin'||(user.role==='leader'&&lp.bulletin))&&(
             <Card>
-              <div onClick={()=>{setView('list');setEditingPost(null);setTitle('');setContent('');setContentId('');setEventDate('');setTextAlign('left');setImageUrl('');setSubType('general');setWeekDays({mon:{en:'',id:''},tue:{en:'',id:''},wed:{en:'',id:''},thu:{en:'',id:''},fri:{en:'',id:''},sat:{en:'',id:''},sun:{en:'',id:''}});}} style={{color:th.primary,fontWeight:700,marginBottom:14,cursor:'pointer'}}>← {lang==='id'?'Kembali':'Back'}</div>
+              <div onClick={()=>{setView('list');setEditingPost(null);setTitle('');setTitleId('');setContent('');setContentId('');setEventDate('');setTextAlign('left');setImageUrl('');setSubType('general');setWeekDays({mon:{en:'',id:''},tue:{en:'',id:''},wed:{en:'',id:''},thu:{en:'',id:''},fri:{en:'',id:''},sat:{en:'',id:''},sun:{en:'',id:''}});}} style={{color:th.primary,fontWeight:700,marginBottom:14,cursor:'pointer'}}>← {lang==='id'?'Kembali':'Back'}</div>
               <label style={{fontSize:13,fontWeight:600,color:th.textMid,marginBottom:6,display:'block'}}>{lang==='id'?'Judul':'Title'}</label>
-              <input value={title} onChange={e=>setTitle(e.target.value)} placeholder={lang==='id'?'Judul...':'Title...'} style={{...S.inp,marginBottom:16}}/>
+              <div style={{position:'relative',marginBottom:10}}>
+                <input value={title} onChange={e=>setTitle(e.target.value)} placeholder={lang==='id'?'Judul (English)...':'Title (English)...'} style={{...S.inp,marginBottom:0,paddingRight:36}}/>
+                {title&&<span onClick={()=>setTitle('')} style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',cursor:'pointer',color:th.textMid,fontSize:16,fontWeight:700}}>✕</span>}
+              </div>
+              <div style={{position:'relative',marginBottom:16}}>
+                <input value={titleId} onChange={e=>setTitleId(e.target.value)} placeholder="Judul (Indonesia)..." style={{...S.inp,marginBottom:0,paddingRight:36}}/>
+                {titleId&&<span onClick={()=>setTitleId('')} style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',cursor:'pointer',color:th.textMid,fontSize:16,fontWeight:700}}>✕</span>}
+              </div>
               {subType==='reading_plan'&&(
                 <div style={{marginBottom:16}}>
                   <div style={{display:'flex',marginBottom:14,borderRadius:14,overflow:'hidden',border:`2px solid ${th.border}`}}>
@@ -1270,9 +1335,10 @@ const BulletinScreen=({user,lang,directPost,clearDirectPost,lp={}})=>{
                 <button onClick={()=>setWriteLang('en')} style={{flex:1,padding:'12px',border:'none',backgroundColor:writeLang==='en'?th.primary:'white',color:writeLang==='en'?'white':th.textMid,fontWeight:700,fontSize:13,cursor:'pointer'}}>🇺🇸 English</button>
               </div>
               {subType!=='reading_plan'&&(
-                writeLang==='id'?<><label style={{fontSize:13,fontWeight:600,color:th.textMid,marginBottom:6,display:'block'}}>Konten Indonesia 🇮🇩</label><textarea value={contentId} onChange={e=>setContentId(e.target.value)} placeholder="Tulis konten..." rows={6} style={{...S.inp,height:160,resize:'vertical',marginBottom:16}}/></>
-              :<><label style={{fontSize:13,fontWeight:600,color:th.textMid,marginBottom:6,display:'block'}}>English Content 🇺🇸</label><textarea value={content} onChange={e=>setContent(e.target.value)} placeholder="Write content..." rows={6} style={{...S.inp,height:160,resize:'vertical',marginBottom:16}}/></>
+                writeLang==='id'?<><label style={{fontSize:13,fontWeight:600,color:th.textMid,marginBottom:6,display:'block'}}>Konten Indonesia 🇮🇩</label><div style={{position:'relative'}}><textarea value={contentId} onChange={e=>setContentId(e.target.value)} placeholder="Tulis konten..." rows={6} style={{...S.inp,height:160,resize:'vertical',marginBottom:16,paddingRight:36}}/>{contentId&&<span onClick={()=>setContentId('')} style={{position:'absolute',right:12,top:10,cursor:'pointer',color:th.textMid,fontSize:16,fontWeight:700}}>✕</span>}</div></>
+              :<><label style={{fontSize:13,fontWeight:600,color:th.textMid,marginBottom:6,display:'block'}}>English Content 🇺🇸</label><div style={{position:'relative'}}><textarea value={content} onChange={e=>setContent(e.target.value)} placeholder="Write content..." rows={6} style={{...S.inp,height:160,resize:'vertical',marginBottom:16,paddingRight:36}}/>{content&&<span onClick={()=>setContent('')} style={{position:'absolute',right:12,top:10,cursor:'pointer',color:th.textMid,fontSize:16,fontWeight:700}}>✕</span>}</div></>
               )}
+
               <Btn label={editingPost?(lang==='id'?'Update':'Update'):(lang==='id'?'Publikasikan':'Publish')} onClick={handleSave} disabled={subType!=='reading_plan'&&!content&&!contentId}/>
             </Card>
           )}
@@ -1284,7 +1350,7 @@ const BulletinScreen=({user,lang,directPost,clearDirectPost,lp={}})=>{
                 <div onClick={()=>setSelectedPost(b)} style={{flex:1,cursor:'pointer'}}>
                   <div style={{fontSize:15,fontWeight:700}}>
                     {b.subType==='daily_devotional'&&b.dayOfWeek&&<span style={{color:th.accent}}>{({mon:lang==='id'?'Senin':'Mon',tue:lang==='id'?'Selasa':'Tue',wed:lang==='id'?'Rabu':'Wed',thu:lang==='id'?'Kamis':'Thu',fri:lang==='id'?'Jumat':'Fri',sat:lang==='id'?'Sabtu':'Sat',sun:lang==='id'?'Minggu':'Sun'})[b.dayOfWeek]} - </span>}
-                    {b.title||dispContent?.slice(0,60)}
+                    {(lang==='id'?(b.titleId||b.title):(b.title||b.titleId))||dispContent?.slice(0,60)}
                   </div>
                 </div>
                 {(user.role==='admin'||(user.role==='leader'&&lp.bulletin))&&<button onClick={()=>handleEditClick(b)} style={{backgroundColor:`${th.primary}10`,border:'none',borderRadius:10,padding:'6px 10px',color:th.primary,fontSize:11,fontWeight:700,cursor:'pointer',marginLeft:8}}>✏️</button>}
@@ -1319,7 +1385,7 @@ const BulletinScreen=({user,lang,directPost,clearDirectPost,lp={}})=>{
   );
 };
 
-const RequestScreen=({user,lang,lp={}})=>{
+const RequestScreen=({user,lang,lp={},onNav})=>{
   const [view,setView]=useState('list');
   const [reqType,setReqType]=useState('baptism');
   const [reqNote,setReqNote]=useState('');
@@ -1349,7 +1415,7 @@ const RequestScreen=({user,lang,lp={}})=>{
     if(!reqPhone)return;
     const rt=reqTypes.find(r=>r.key===reqType);
     await addDoc(collection(db,'requests'),{userId:user.uid,userName:user.name,userPhone:reqPhone,userEmail:user.email,type:reqType,typeLabel:rt?.label,typeEmoji:rt?.emoji,note:reqNote,bulanPelayanan,status:'pending',date:new Date().toLocaleDateString(),timestamp:new Date().toISOString()});
-    await addDoc(collection(db,'notifications'),{type:'new_request',userName:user.name,userEmail:user.email,reqType:rt?.label,date:new Date().toLocaleDateString(),timestamp:new Date().toISOString(),read:false});
+    await addDoc(collection(db,'notifications'),{type:'new_request',userName:user.name,userEmail:user.email,reqType:rt?.label,date:new Date().toLocaleDateString(),timestamp:new Date().toISOString(),readBy:[]});
     setReqNote('');setBulanPelayanan('');setView('list');
   };
 
@@ -1389,9 +1455,15 @@ const RequestScreen=({user,lang,lp={}})=>{
 
   return(
     <div style={S.screen}><div style={{padding:16}}>
-      <div style={{backgroundColor:th.primary,borderRadius:20,padding:18,marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <div><div style={{color:'white',fontSize:20,fontWeight:700}}>{lang==='id'?'Permohonan':'Requests'}</div><div style={{color:'rgba(255,255,255,0.6)',fontSize:13,marginTop:2}}>{requests.length} {lang==='id'?'permohonan':'requests'}</div></div>
-        <button onClick={()=>setView('add')} style={{backgroundColor:th.accent,border:'none',borderRadius:20,padding:'7px 14px',color:th.primary,fontWeight:700,fontSize:13,cursor:'pointer'}}>+ {lang==='id'?'Buat':'New'}</button>
+      <div style={{backgroundColor:th.primary,borderRadius:20,padding:18,marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,cursor:'pointer'}} onClick={()=>onNav&&onNav('home')}>
+          <span style={{color:'rgba(255,255,255,0.7)',fontSize:15}}>←</span>
+          <span style={{color:'rgba(255,255,255,0.7)',fontSize:13,fontWeight:600}}>{lang==='id'?'Kembali':'Back'}</span>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div><div style={{color:'white',fontSize:20,fontWeight:700}}>{lang==='id'?'Permohonan':'Requests'}</div><div style={{color:'rgba(255,255,255,0.6)',fontSize:13,marginTop:2}}>{requests.length} {lang==='id'?'permohonan':'requests'}</div></div>
+          <button onClick={()=>setView('add')} style={{backgroundColor:th.accent,border:'none',borderRadius:20,padding:'7px 14px',color:th.primary,fontWeight:700,fontSize:13,cursor:'pointer'}}>+ {lang==='id'?'Buat':'New'}</button>
+        </div>
       </div>
       {requests.length===0?<div style={{textAlign:'center',padding:48}}><div style={{fontSize:48,marginBottom:16}}>📝</div><div style={{fontSize:16,fontWeight:700,color:th.textMid}}>{lang==='id'?'Belum ada permohonan':'No requests yet'}</div></div>
       :[...requests].reverse().map(r=>(
@@ -1419,7 +1491,7 @@ const RequestScreen=({user,lang,lp={}})=>{
   );
 };
 
-const VolunteerScreen=({user,lang})=>{
+const VolunteerScreen=({user,lang,onNav})=>{
   const [myMinistries,setMyMinistries]=useState([]);
   const [saved,setSaved]=useState(false);
   const [allVolunteers,setAllVolunteers]=useState([]);
@@ -1455,7 +1527,7 @@ const VolunteerScreen=({user,lang})=>{
     if(existing){await updateDoc(doc(db,'volunteers',existing.id),vol);}
     else{
       await addDoc(collection(db,'volunteers'),vol);
-      await addDoc(collection(db,'notifications'),{type:'new_volunteer',userName:user.name,userEmail:user.email,date:new Date().toLocaleDateString(),timestamp:new Date().toISOString(),read:false});
+      await addDoc(collection(db,'notifications'),{type:'new_volunteer',userName:user.name,userEmail:user.email,date:new Date().toLocaleDateString(),timestamp:new Date().toISOString(),readBy:[]});
     }
     setSaved(true);setTimeout(()=>setSaved(false),2500);
   };
@@ -1463,6 +1535,10 @@ const VolunteerScreen=({user,lang})=>{
   return(
     <div style={S.screen}><div style={{padding:16}}>
       <div style={{backgroundColor:th.primary,borderRadius:20,padding:18,marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,cursor:'pointer'}} onClick={()=>onNav&&onNav('home')}>
+          <span style={{color:'rgba(255,255,255,0.7)',fontSize:15}}>←</span>
+          <span style={{color:'rgba(255,255,255,0.7)',fontSize:13,fontWeight:600}}>{lang==='id'?'Kembali':'Back'}</span>
+        </div>
         <div style={{color:'white',fontSize:20,fontWeight:700}}>{lang==='id'?'Volunteer Pelayanan':'Ministry Volunteer'}</div>
         <div style={{color:'rgba(255,255,255,0.6)',fontSize:13,marginTop:4}}>{lang==='id'?'Pilih bidang pelayananmu':'Select your ministry area'}</div>
       </div>
@@ -1505,7 +1581,7 @@ const VolunteerScreen=({user,lang})=>{
   );
 };
 
-const ReportScreen=({user,lang})=>{
+const ReportScreen=({user,lang,lp={},onNav})=>{
   const [donations,setDonations]=useState([]);
   const [showSummary,setShowSummary]=useState(false);
   const [view,setView]=useState('list');
@@ -1534,7 +1610,7 @@ const ReportScreen=({user,lang})=>{
   const [jamSelesai,setJamSelesai]=useState('');
   const [attendeeNames,setAttendeeNames]=useState(Array.from({length:20},(_,i)=>`${i+1}. `).join('\n'));
   const [reports,setReports]=useState([]);
-  const types=lang==='id'?{activity:'Kegiatan',finance:'Keuangan',ministry:'Pelayanan',other:'Lainnya'}:{activity:'Activity',finance:'Finance',ministry:'Ministry',other:'Other'};
+  const types=lang==='id'?{activity:'Mentor',finance:'Keuangan',ministry:'Pelayanan',other:'Lainnya'}:{activity:'Mentor',finance:'Finance',ministry:'Ministry',other:'Other'};
 
   useEffect(()=>{
     const unsub=onSnapshot(collection(db,'reports'),snap=>{
@@ -1577,12 +1653,12 @@ const ReportScreen=({user,lang})=>{
     if(type==='activity'){
       if(!periode||!mentor||!mentee)return;
       await addDoc(collection(db,'reports'),{userId:user.uid,userName:user.name,title:`Laporan Kegiatan - ${periode}`,type,periode,mentor,mentee,tempatWaktu,note:actNote,date:new Date().toLocaleDateString(),timestamp:new Date().toISOString()});
-      await addDoc(collection(db,'notifications'),{type:'new_report',userName:user.name,userEmail:user.email,reportType:'Activity',date:new Date().toLocaleDateString(),timestamp:new Date().toISOString(),read:false});
+      await addDoc(collection(db,'notifications'),{type:'new_report',userName:user.name,userEmail:user.email,reportType:'Activity',date:new Date().toLocaleDateString(),timestamp:new Date().toISOString(),readBy:[]});
       setPeriode('');setMentor('');setMentee('');setTempatWaktu('');setActNote('');
     }else{
       if(!title||!content)return;
       await addDoc(collection(db,'reports'),{userId:user.uid,userName:user.name,title,content,type,date:new Date().toLocaleDateString(),timestamp:new Date().toISOString()});
-      await addDoc(collection(db,'notifications'),{type:'new_report',userName:user.name,userEmail:user.email,reportType:types[type]||type,date:new Date().toLocaleDateString(),timestamp:new Date().toISOString(),read:false});
+      await addDoc(collection(db,'notifications'),{type:'new_report',userName:user.name,userEmail:user.email,reportType:types[type]||type,date:new Date().toLocaleDateString(),timestamp:new Date().toISOString(),readBy:[]});
       setTitle('');setContent('');
     }
     setView('list');
@@ -1596,7 +1672,7 @@ const ReportScreen=({user,lang})=>{
       </div>
       {type==='activity'?(
         <>
-          <div style={{fontSize:18,fontWeight:800,color:th.text,marginBottom:16}}>{lang==='id'?'Laporan Kegiatan':'Activity Report'}</div>
+          <div style={{fontSize:18,fontWeight:800,color:th.text,marginBottom:16}}>{lang==='id'?'Laporan Mentor':'Mentor Report'}</div>
           <Inp label={lang==='id'?'Periode':'Period'} value={periode} onChange={setPeriode} placeholder="e.g. Juni 2026"/>
           <Inp label="Mentor" value={mentor} onChange={setMentor} placeholder={lang==='id'?'Nama mentor...':'Mentor name...'}/>
           <Inp label="Mentee" value={mentee} onChange={setMentee} placeholder={lang==='id'?'Nama mentee...':'Mentee name...'}/>
@@ -1641,9 +1717,15 @@ const ReportScreen=({user,lang})=>{
 
   return(
     <div style={S.screen}><div style={{padding:16}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-        <div><div style={{fontSize:20,fontWeight:700}}>{lang==='id'?'Laporan':'Reports'}</div><div style={{color:th.textMid,fontSize:13}}>{reports.length} {lang==='id'?'laporan':'reports'}</div></div>
-        <button onClick={()=>setView('write')} style={{backgroundColor:th.accent,border:'none',borderRadius:20,padding:'8px 16px',color:th.primary,fontWeight:700,fontSize:13,cursor:'pointer'}}>{lang==='id'?'Buat':'Create'}</button>
+      <div style={{backgroundColor:th.primary,borderRadius:20,padding:18,marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,cursor:'pointer'}} onClick={()=>onNav&&onNav('home')}>
+          <span style={{color:'rgba(255,255,255,0.7)',fontSize:15}}>←</span>
+          <span style={{color:'rgba(255,255,255,0.7)',fontSize:13,fontWeight:600}}>{lang==='id'?'Kembali':'Back'}</span>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div><div style={{color:'white',fontSize:20,fontWeight:700}}>{lang==='id'?'Laporan':'Reports'}</div><div style={{color:'rgba(255,255,255,0.6)',fontSize:13}}>{reports.length} {lang==='id'?'laporan':'reports'}</div></div>
+          <button onClick={()=>setView('write')} style={{backgroundColor:th.accent,border:'none',borderRadius:20,padding:'8px 16px',color:th.primary,fontWeight:700,fontSize:13,cursor:'pointer'}}>{lang==='id'?'Buat':'Create'}</button>
+        </div>
       </div>
       {(user.role==='admin'||(user.role==='leader'&&lp.schedule))&&(
         <button onClick={()=>setShowSummary(!showSummary)}
@@ -1822,7 +1904,7 @@ const SendNotificationScreen=({user,lang,allMembers})=>{
       await addDoc(collection(db,'notifications'),{
         type:'admin_message', title, body,
         sentBy:user.name, date:new Date().toLocaleDateString(),
-        timestamp:new Date().toISOString(), read:false,
+        timestamp:new Date().toISOString(), readBy:[],
         targets:target==='all'?'all':selectedMembers
       });
       setSent(true); setTitle(''); setBody('');
@@ -1875,7 +1957,7 @@ const SendNotificationScreen=({user,lang,allMembers})=>{
 };
 
 
-const ClassesScreen=({user,lang})=>{
+const ClassesScreen=({user,lang,onNav})=>{
   const [selectedClass,setSelectedClass]=useState(null);
   const [note,setNote]=useState('');
   const [registrations,setRegistrations]=useState([]);
@@ -1914,7 +1996,7 @@ const ClassesScreen=({user,lang})=>{
       type:'new_class_registration', userName:user.name,
       userEmail:user.email, className:cls.label,
       date:new Date().toLocaleDateString(),
-      timestamp:new Date().toISOString(), read:false
+      timestamp:new Date().toISOString(), readBy:[]
     });
     setNote(''); setSelectedClass(null); setSucess(true);
     setTimeout(()=>setSucess(false),3000);
@@ -1924,6 +2006,10 @@ const ClassesScreen=({user,lang})=>{
   return(
     <div style={S.screen}><div style={{padding:16}}>
       <div style={{backgroundColor:th.primary,borderRadius:20,padding:18,marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,cursor:'pointer'}} onClick={()=>onNav&&onNav('home')}>
+          <span style={{color:'rgba(255,255,255,0.7)',fontSize:15}}>←</span>
+          <span style={{color:'rgba(255,255,255,0.7)',fontSize:13,fontWeight:600}}>{lang==='id'?'Kembali':'Back'}</span>
+        </div>
         <div style={{color:'white',fontSize:20,fontWeight:700}}>{lang==='id'?'Kelas Pengajaran':'Teaching Classes'}</div>
         <div style={{color:'rgba(255,255,255,0.6)',fontSize:13,marginTop:4}}>{lang==='id'?'Daftar kelas yang tersedia':'Available classes'}</div>
       </div>
@@ -2193,6 +2279,7 @@ const ScanAttendanceScreen=({user,lang,lp={}})=>{
 const RoleManagementScreen=({user,lang,lp,setLeaderPermissions})=>{
   const [members,setMembers]=useState([]);
   const [search,setSearch]=useState('');
+  const [roleFilter,setRoleFilter]=useState(null);
 
   useEffect(()=>{
     const unsub=onSnapshot(collection(db,'members'),snap=>{
@@ -2211,7 +2298,11 @@ const RoleManagementScreen=({user,lang,lp,setLeaderPermissions})=>{
     await setDoc(doc(db,'settings','leader_permissions'),newPerm);
   };
 
-  const filtered=members.filter(m=>(m.name||'').toLowerCase().includes(search.toLowerCase())||(m.email||'').toLowerCase().includes(search.toLowerCase()));
+  const filtered=members.filter(m=>{
+    const matchSearch=(m.name||'').toLowerCase().includes(search.toLowerCase())||(m.email||'').toLowerCase().includes(search.toLowerCase());
+    const matchRole=!roleFilter||(m.role||'member')===roleFilter;
+    return matchSearch&&matchRole;
+  });
 
   const roleColors={admin:th.danger,usher:'#dd6b20',leader:'#7c3aed',member:th.textMid};
   const roleLabels={admin:'Admin',usher:'Usher',leader:'Leader',member:lang==='id'?'Member':'Member'};
@@ -2229,7 +2320,23 @@ const RoleManagementScreen=({user,lang,lp,setLeaderPermissions})=>{
     <div style={S.screen}><div style={{padding:16}}>
       <div style={{backgroundColor:th.primary,borderRadius:20,padding:18,marginBottom:16}}>
         <div style={{color:'white',fontSize:20,fontWeight:700}}>👥 {lang==='id'?'Kelola Role':'Role Management'}</div>
-        <div style={{color:'rgba(255,255,255,0.6)',fontSize:13,marginTop:4}}>{members.length} {lang==='id'?'member':'members'}</div>
+        <div style={{color:'rgba(255,255,255,0.6)',fontSize:13,marginTop:4}}>{members.length} {lang==='id'?'member terdaftar':'registered members'}</div>
+        <div style={{display:'flex',gap:10,marginTop:10,flexWrap:'wrap'}}>
+          {[
+            {key:'member',label:lang==='id'?'Member':'Member'},
+            {key:'leader',label:'Leader'},
+            {key:'usher',label:'Usher'},
+            {key:'admin',label:'Admin'},
+          ].map(r=>(
+            <div key={r.key} onClick={()=>setRoleFilter(roleFilter===r.key?null:r.key)} style={{backgroundColor:roleFilter===r.key?'white':'rgba(255,255,255,0.15)',borderRadius:12,padding:'6px 12px',cursor:'pointer',border:roleFilter===r.key?`1.5px solid white`:'1.5px solid transparent'}}>
+              <span style={{color:roleFilter===r.key?th.primary:'white',fontSize:12,fontWeight:700}}>{members.filter(m=>(m.role||'member')===r.key).length}</span>
+              <span style={{color:roleFilter===r.key?th.primary:'rgba(255,255,255,0.7)',fontSize:11,marginLeft:4}}>{r.label}</span>
+            </div>
+          ))}
+          {roleFilter&&<div onClick={()=>setRoleFilter(null)} style={{backgroundColor:'rgba(255,255,255,0.15)',borderRadius:12,padding:'6px 12px',cursor:'pointer'}}>
+            <span style={{color:'white',fontSize:11}}>✕ {lang==='id'?'Reset':'Clear'}</span>
+          </div>}
+        </div>
       </div>
       <Card>
         <div style={{fontSize:14,fontWeight:700,color:'#7c3aed',marginBottom:12}}>🔑 {lang==='id'?'Permission Leader':'Leader Permissions'}</div>
@@ -2243,20 +2350,35 @@ const RoleManagementScreen=({user,lang,lp,setLeaderPermissions})=>{
         ))}
       </Card>
       <Inp value={search} onChange={setSearch} placeholder={lang==='id'?'Cari nama atau email...':'Search name or email...'}/>
-      {filtered.map(m=>(
+      {[...filtered].sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map((m,idx)=>(
         <Card key={m.id}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-            <div>
-              <div style={{fontSize:14,fontWeight:700}}>{m.name}</div>
-              <div style={{fontSize:11,color:th.textLight}}>{m.email}</div>
+          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}>
+            <div style={{width:44,height:44,borderRadius:22,backgroundColor:`${roleColors[m.role]||th.textMid}20`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+              <span style={{fontSize:16,fontWeight:800,color:roleColors[m.role]||th.textMid}}>{(m.name||'?')[0].toUpperCase()}</span>
             </div>
-            <span style={{backgroundColor:`${roleColors[m.role]||th.textMid}20`,borderRadius:20,padding:'4px 10px',fontSize:11,fontWeight:700,color:roleColors[m.role]||th.textMid}}>{roleLabels[m.role]||m.role}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
+                <div style={{fontSize:14,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.name}</div>
+                <span style={{backgroundColor:`${roleColors[m.role]||th.textMid}20`,borderRadius:20,padding:'2px 8px',fontSize:10,fontWeight:700,color:roleColors[m.role]||th.textMid,flexShrink:0}}>{roleLabels[m.role]||m.role}</span>
+              </div>
+              <div style={{fontSize:11,color:th.textLight,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.email}</div>
+              <div style={{display:'flex',gap:10,marginTop:2}}>
+                {m.joinDate&&<span style={{fontSize:10,color:th.textMid}}>📅 {m.joinDate}</span>}
+                {m.lastSeen&&<span style={{fontSize:10,color:th.textMid}}>👁 {(()=>{
+                  const diff=Math.floor((new Date()-new Date(m.lastSeen))/60000);
+                  if(diff<1) return lang==='id'?'Baru saja':'Just now';
+                  if(diff<60) return `${diff}m ${lang==='id'?'lalu':'ago'}`;
+                  if(diff<1440) return `${Math.floor(diff/60)}h ${lang==='id'?'lalu':'ago'}`;
+                  return `${Math.floor(diff/1440)}d ${lang==='id'?'lalu':'ago'}`;
+                })()}</span>}
+              </div>
+            </div>
           </div>
-          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+          <div style={{display:'flex',gap:6}}>
             {['member','leader','usher','admin'].map(r=>(
               <button key={r} onClick={()=>handleRoleChange(m.id,r)}
                 disabled={m.role===r}
-                style={{flex:1,padding:'8px',borderRadius:10,border:`1.5px solid ${m.role===r?roleColors[r]:th.border}`,backgroundColor:m.role===r?`${roleColors[r]}15`:'white',color:m.role===r?roleColors[r]:th.textMid,fontSize:11,fontWeight:700,cursor:m.role===r?'default':'pointer',opacity:m.role===r?1:0.7}}>
+                style={{flex:1,padding:'7px 4px',borderRadius:10,border:`1.5px solid ${m.role===r?roleColors[r]:th.border}`,backgroundColor:m.role===r?`${roleColors[r]}15`:'white',color:m.role===r?roleColors[r]:th.textMid,fontSize:10,fontWeight:700,cursor:m.role===r?'default':'pointer',opacity:m.role===r?1:0.7}}>
                 {roleLabels[r]}
               </button>
             ))}
@@ -2285,7 +2407,9 @@ export default function App(){
     const unsub=onAuthStateChanged(auth,async fireUser=>{
       if(fireUser){
         const snap=await getDoc(doc(db,'members',fireUser.uid));
-        setUser({uid:fireUser.uid,email:fireUser.email,...(snap.exists()?snap.data():{})});
+        const userData={uid:fireUser.uid,email:fireUser.email,...(snap.exists()?snap.data():{})};
+        setUser(userData);
+        await setDoc(doc(db,'members',fireUser.uid),{lastSeen:new Date().toISOString()},{merge:true});
       }else setUser(null);
       setLoaded(true);
     });
@@ -2304,7 +2428,10 @@ export default function App(){
     const unsub=onSnapshot(collection(db,'notifications'),snap=>{
       const all=snap.docs.map(d=>({id:d.id,...d.data()}));
       const filtered=all.filter(n=>{
-        if(n.read) return false;
+        // Backward-compat: notif lama pakai field 'read' global (admin-only types)
+        if(n.readBy===undefined && n.read) return false;
+        // Notif baru: per-user readBy array
+        if(n.readBy && n.readBy.includes(user.uid)) return false;
         if(user.role==='admin') return true;
         if(n.type==='admin_message'){
           if(n.targets==='all') return true;
@@ -2352,13 +2479,13 @@ export default function App(){
       case 'give':      return <GiveScreen user={user} lang={lang}/>;
       case 'schedule':  return <ScheduleScreen key={scheduleKey} user={user} lang={lang} lp={leaderPermissions}/>;
       case 'bulletin':  return <BulletinScreen user={user} lang={lang} directPost={directBulletinPost} clearDirectPost={()=>setDirectBulletinPost(null)} lp={leaderPermissions}/>;
-      case 'request':   return <RequestScreen user={user} lang={lang} lp={leaderPermissions}/>;
-      case 'volunteer': return <VolunteerScreen user={user} lang={lang}/>;
+      case 'request':   return <RequestScreen user={user} lang={lang} lp={leaderPermissions} onNav={(tab)=>setActiveTab(tab)}/>;
+      case 'volunteer': return <VolunteerScreen user={user} lang={lang} onNav={(tab)=>setActiveTab(tab)}/>;
       case 'scan':      return <ScanAttendanceScreen user={user} lang={lang} lp={leaderPermissions}/>;
       case 'roles':     return <RoleManagementScreen user={user} lang={lang} lp={leaderPermissions} setLeaderPermissions={setLeaderPermissions}/>;
-      case 'classes':   return <ClassesScreen user={user} lang={lang}/>;
+      case 'classes':   return <ClassesScreen user={user} lang={lang} onNav={(tab)=>setActiveTab(tab)}/>;
       case 'notify':    return <SendNotificationScreen user={user} lang={lang}/>;
-      case 'report':    return <ReportScreen user={user} lang={lang} lp={leaderPermissions}/>;
+      case 'report':    return <ReportScreen user={user} lang={lang} lp={leaderPermissions} onNav={(tab)=>setActiveTab(tab)}/>;
       case 'profile':   return <ProfileScreen user={user} setUser={setUser} lang={lang}/>;
       default: return null;
     }
@@ -2368,12 +2495,12 @@ export default function App(){
     <div style={S.app}>
       <Header lang={lang} setLang={setLang} onBell={()=>setShowNotif(true)} unreadCount={unreadCount} onLogout={()=>signOut(auth)}/>
       <div style={{flex:1}}>{renderScreen()}</div>
-      <BottomNav active={activeTab} onNav={(tab)=>{ setActiveTab(tab); if(tab==='schedule') setScheduleKey(k=>k+1); if(tab==='bulletin') setDirectBulletinPost(null); }} lang={lang}/>
+      <BottomNav active={activeTab} onNav={(tab)=>{ setActiveTab(tab); if(tab==='schedule') setScheduleKey(k=>k+1); if(tab==='bulletin') setDirectBulletinPost(null); if(user) setDoc(doc(db,'members',user.uid),{lastSeen:new Date().toISOString()},{merge:true}); }} lang={lang}/>
       {showNotif&&<div style={{position:'fixed',top:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:430,height:'100vh',backgroundColor:th.bg,zIndex:1000,display:'flex',flexDirection:'column'}}>
         <div style={{backgroundColor:th.primary,padding:16,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <span style={{color:'white',fontSize:18,fontWeight:700}}>🔔 {lang==='id'?'Notifikasi':'Notifications'}</span>
           <div style={{display:'flex',gap:10}}>
-            <button onClick={async()=>{ setClearedNotifs(notifications.map(n=>n.id)); await Promise.all(notifications.map(n=>updateDoc(doc(db,'notifications',n.id),{read:true}))); }} style={{backgroundColor:'rgba(255,255,255,0.15)',border:'none',borderRadius:20,padding:'5px 12px',color:'white',fontSize:12,cursor:'pointer'}}>{lang==='id'?'Hapus Semua':'Clear All'}</button>
+            <button onClick={async()=>{ setClearedNotifs(notifications.map(n=>n.id)); await Promise.all(notifications.map(n=>updateDoc(doc(db,'notifications',n.id),{readBy:arrayUnion(user.uid)}))); }} style={{backgroundColor:'rgba(255,255,255,0.15)',border:'none',borderRadius:20,padding:'5px 12px',color:'white',fontSize:12,cursor:'pointer'}}>{lang==='id'?'Hapus Semua':'Clear All'}</button>
             <button onClick={()=>setShowNotif(false)} style={{backgroundColor:'rgba(255,255,255,0.15)',border:'none',borderRadius:20,padding:'5px 12px',color:'white',fontSize:12,cursor:'pointer'}}>{lang==='id'?'Tutup':'Close'}</button>
           </div>
         </div>
@@ -2388,9 +2515,9 @@ export default function App(){
                 <div key={n.id} onClick={n.type==='new_bulletin'?()=>{
                   setShowNotif(false);
                   setActiveTab('bulletin');
-                  setDirectBulletinPost({cat:n.cat||'announcement',_categoryOnly:true});
+                  setDirectBulletinPost({cat:n.cat||'announcement',subType:n.subType||null,_categoryOnly:true});
                   setClearedNotifs(prev=>[...prev,n.id]);
-                  updateDoc(doc(db,'notifications',n.id),{read:true});
+                  updateDoc(doc(db,'notifications',n.id),{readBy:arrayUnion(user.uid)});
                 }:undefined} style={{backgroundColor:'white',borderRadius:18,padding:16,marginBottom:10,boxShadow:'0 2px 6px rgba(0,0,0,0.05)',borderLeft:`4px solid ${color}`,cursor:n.type==='new_bulletin'?'pointer':'default'}}>
                   <div style={{display:'flex',gap:12,alignItems:'center'}}>
                     <span style={{fontSize:32}}>{icon}</span>

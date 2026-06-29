@@ -1388,6 +1388,7 @@ const BulletinScreen=({user,lang,directPost,clearDirectPost,lp={}})=>{
 
 const RequestScreen=({user,lang,lp={},onNav})=>{
   const [view,setView]=useState('list');
+  const [submitted,setSubmitted]=useState(false);
   const [reqType,setReqType]=useState('baptism');
   const [reqNote,setReqNote]=useState('');
   const [reqPhone,setReqPhone]=useState('');
@@ -1417,7 +1418,8 @@ const RequestScreen=({user,lang,lp={},onNav})=>{
     const rt=reqTypes.find(r=>r.key===reqType);
     await addDoc(collection(db,'requests'),{userId:user.uid,userName:user.name,userPhone:reqPhone,userEmail:user.email,type:reqType,typeLabel:rt?.label,typeEmoji:rt?.emoji,note:reqNote,bulanPelayanan,status:'pending',date:new Date().toLocaleDateString(),timestamp:new Date().toISOString()});
     await addDoc(collection(db,'notifications'),{type:'new_request',userName:user.name,userEmail:user.email,reqType:rt?.label,date:new Date().toLocaleDateString(),timestamp:new Date().toISOString(),readBy:[]});
-    setReqNote('');setBulanPelayanan('');setView('list');
+    setReqNote('');setBulanPelayanan('');setSubmitted(true);
+    setTimeout(()=>{setSubmitted(false);setView('list');},6000);
   };
 
   const handleStatus=async(id,status)=>await updateDoc(doc(db,'requests',id),{status});
@@ -1450,7 +1452,17 @@ const RequestScreen=({user,lang,lp={},onNav})=>{
       )}
       <label style={{fontSize:13,fontWeight:600,color:th.textMid,marginBottom:6,display:'block'}}>{lang==='id'?'Catatan':'Notes'}</label>
       <textarea value={reqNote} onChange={e=>setReqNote(e.target.value)} placeholder={lang==='id'?'Keterangan tambahan...':'Additional notes...'} rows={4} style={{...S.inp,height:120,resize:'vertical',marginBottom:16}}/>
-      <Btn label={lang==='id'?'Kirim Permohonan':'Submit Request'} onClick={handleSubmit} disabled={!reqPhone}/>
+      {submitted&&<div style={{backgroundColor:'#f0fff4',borderRadius:14,padding:16,marginBottom:14}}>
+        <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:8}}>
+          <span>✅</span><span style={{color:th.success,fontWeight:700,fontSize:15}}>{lang==='id'?'Permohonan terkirim!':'Request submitted!'}</span>
+        </div>
+        <div style={{fontSize:13,color:th.text,lineHeight:1.6}}>
+          {lang==='id'
+            ?'Terima kasih! Permohonan Anda sudah kami terima dan akan segera diproses. Kami akan menghubungi Anda lebih lanjut. Tuhan Yesus memberkati 🙏'
+            :"Thank you! Your request has been received and will be processed soon. We will contact you further. God bless you 🙏"}
+        </div>
+      </div>}
+      {!submitted&&<Btn label={lang==='id'?'Kirim Permohonan':'Submit Request'} onClick={handleSubmit} disabled={!reqPhone}/>}
     </div></div>
   );
 
@@ -1492,7 +1504,7 @@ const RequestScreen=({user,lang,lp={},onNav})=>{
   );
 };
 
-const VolunteerScreen=({user,lang,onNav})=>{
+const VolunteerScreen=({user,lang,onNav,lp={}})=>{
   const [myMinistries,setMyMinistries]=useState([]);
   const [saved,setSaved]=useState(false);
   const [allVolunteers,setAllVolunteers]=useState([]);
@@ -1530,7 +1542,7 @@ const VolunteerScreen=({user,lang,onNav})=>{
       await addDoc(collection(db,'volunteers'),vol);
       await addDoc(collection(db,'notifications'),{type:'new_volunteer',userName:user.name,userEmail:user.email,date:new Date().toLocaleDateString(),timestamp:new Date().toISOString(),readBy:[]});
     }
-    setSaved(true);setTimeout(()=>setSaved(false),2500);
+    setSaved(true);setTimeout(()=>setSaved(false),6000);
   };
 
   return(
@@ -1543,7 +1555,16 @@ const VolunteerScreen=({user,lang,onNav})=>{
         <div style={{color:'white',fontSize:20,fontWeight:700}}>{lang==='id'?'Volunteer Pelayanan':'Ministry Volunteer'}</div>
         <div style={{color:'rgba(255,255,255,0.6)',fontSize:13,marginTop:4}}>{lang==='id'?'Pilih bidang pelayananmu':'Select your ministry area'}</div>
       </div>
-      {saved&&<div style={{backgroundColor:'#f0fff4',borderRadius:14,padding:12,marginBottom:14,display:'flex',gap:8,alignItems:'center'}}><span>✅</span><span style={{color:th.success,fontWeight:600}}>{lang==='id'?'Pelayanan tersimpan!':'Ministry saved!'}</span></div>}
+      {saved&&<div style={{backgroundColor:'#f0fff4',borderRadius:14,padding:16,marginBottom:14}}>
+        <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:8}}>
+          <span>✅</span><span style={{color:th.success,fontWeight:700,fontSize:15}}>{lang==='id'?'Pelayanan tersimpan!':'Ministry saved!'}</span>
+        </div>
+        <div style={{fontSize:13,color:th.text,lineHeight:1.6}}>
+          {lang==='id'
+            ?'Terima kasih sudah mendaftar sebagai volunteer! Kami akan menghubungi Anda lebih lanjut mengenai jadwal pelayanan. Tuhan Yesus memberkati 🙏'
+            :"Thank you for signing up as a volunteer! We will contact you further regarding the ministry schedule. God bless you 🙏"}
+        </div>
+      </div>}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
         {ministries.map(m=>{
           const sel=myMinistries.includes(m.key);
@@ -1559,7 +1580,19 @@ const VolunteerScreen=({user,lang,onNav})=>{
       </div>
       <Btn label={lang==='id'?'Simpan Pelayanan':'Save Ministry'} onClick={handleSave} disabled={myMinistries.length===0}/>
       {user.role==='admin'&&<div style={{marginTop:24}}>
-        <div style={{fontSize:14,fontWeight:700,marginBottom:12}}>👥 {lang==='id'?'Daftar Volunteer':'Volunteer List'} ({allVolunteers.length})</div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+          <div style={{fontSize:14,fontWeight:700}}>👥 {lang==='id'?'Daftar Volunteer':'Volunteer List'} ({allVolunteers.length})</div>
+          {(user.role==='admin'||(user.role==='leader'&&lp.exportCsv))&&allVolunteers.length>0&&<button onClick={()=>{
+            const headers=['Name','Email','Phone','Ministries','Date'];
+            const rows=allVolunteers.map(v=>[v.userName||'',v.userEmail||'',v.userPhone||'-',(v.ministries||[]).join('; '),v.date||'']);
+            const csv=[headers,...rows].map(r=>r.map(x=>`"${x}"`).join(',')).join('\n');
+            const blob=new Blob([csv],{type:'text/csv'});
+            const url=URL.createObjectURL(blob);
+            const a=document.createElement('a');
+            a.href=url;a.download=`Bethel_Volunteers_${new Date().toLocaleDateString('en-CA')}.csv`;
+            a.click();URL.revokeObjectURL(url);
+          }} style={{backgroundColor:`${th.primary}10`,border:`1.5px solid ${th.primary}`,borderRadius:10,padding:'6px 12px',color:th.primary,fontSize:11,fontWeight:700,cursor:'pointer'}}>📥 Export CSV</button>}
+        </div>
         {allVolunteers.length===0?<div style={{color:th.textMid,textAlign:'center',padding:20}}>{lang==='id'?'Belum ada':'None yet'}</div>
         :allVolunteers.map(v=>(
           <Card key={v.id}>
@@ -2488,7 +2521,7 @@ export default function App(){
       case 'schedule':  return <ScheduleScreen key={scheduleKey} user={user} lang={lang} lp={leaderPermissions}/>;
       case 'bulletin':  return <BulletinScreen user={user} lang={lang} directPost={directBulletinPost} clearDirectPost={()=>setDirectBulletinPost(null)} lp={leaderPermissions}/>;
       case 'request':   return <RequestScreen user={user} lang={lang} lp={leaderPermissions} onNav={(tab)=>setActiveTab(tab)}/>;
-      case 'volunteer': return <VolunteerScreen user={user} lang={lang} onNav={(tab)=>setActiveTab(tab)}/>;
+      case 'volunteer': return <VolunteerScreen user={user} lang={lang} onNav={(tab)=>setActiveTab(tab)} lp={leaderPermissions}/>;
       case 'scan':      return <ScanAttendanceScreen user={user} lang={lang} lp={leaderPermissions}/>;
       case 'roles':     return <RoleManagementScreen user={user} lang={lang} lp={leaderPermissions} setLeaderPermissions={setLeaderPermissions}/>;
       case 'classes':   return <ClassesScreen user={user} lang={lang} onNav={(tab)=>setActiveTab(tab)}/>;

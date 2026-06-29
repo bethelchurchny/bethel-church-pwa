@@ -961,6 +961,7 @@ const BulletinScreen=({user,lang,directPost,clearDirectPost,lp={}})=>{
       const items=bulletins.filter(b=>b.cat==='devotional'&&(b.subType||'general')==='reading_plan')
         .sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
       if(items.length>0) setSelectedPost(items[0]);
+      else setSelectedPost(null);
     }
   },[selectedSubType,bulletins,view]);
 
@@ -1999,7 +2000,7 @@ const ClassesScreen=({user,lang,onNav})=>{
       timestamp:new Date().toISOString(), readBy:[]
     });
     setNote(''); setSelectedClass(null); setSucess(true);
-    setTimeout(()=>setSucess(false),3000);
+    setTimeout(()=>setSucess(false),6000);
     setSending(false);
   };
 
@@ -2014,8 +2015,15 @@ const ClassesScreen=({user,lang,onNav})=>{
         <div style={{color:'rgba(255,255,255,0.6)',fontSize:13,marginTop:4}}>{lang==='id'?'Daftar kelas yang tersedia':'Available classes'}</div>
       </div>
 
-      {success&&<div style={{backgroundColor:'#f0fff4',borderRadius:14,padding:12,marginBottom:14,display:'flex',gap:8,alignItems:'center'}}>
-        <span>✅</span><span style={{color:th.success,fontWeight:600}}>{lang==='id'?'Pendaftaran berhasil!':'Registration successful!'}</span>
+      {success&&<div style={{backgroundColor:'#f0fff4',borderRadius:14,padding:16,marginBottom:14}}>
+        <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:8}}>
+          <span>✅</span><span style={{color:th.success,fontWeight:700,fontSize:15}}>{lang==='id'?'Pendaftaran berhasil!':'Registration successful!'}</span>
+        </div>
+        <div style={{fontSize:13,color:th.text,lineHeight:1.6}}>
+          {lang==='id'
+            ?'Terima kasih sudah mendaftar! Kami akan menghubungi Anda lebih lanjut mengenai jadwal dan detail kelas. Tuhan Yesus memberkati 🙏'
+            :"Thank you for registering! We will contact you further regarding the class schedule and details. God bless you 🙏"}
+        </div>
       </div>}
 
       {/* Class Cards */}

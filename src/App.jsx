@@ -446,7 +446,7 @@ const HomeScreen=({user,onNav,lang,lp={}})=>{
   );
 };
 
-const CheckInScreen=({user,lang,lp={}})=>{
+const CheckInScreen=({user,lang,lp={},up={}})=>{
   const [status,setStatus]=useState('idle');
   const [dist,setDist]=useState(null);
   const [checkins,setCheckins]=useState([]);
@@ -466,7 +466,7 @@ const CheckInScreen=({user,lang,lp={}})=>{
     const unsub=onSnapshot(collection(db,'checkins'),snap=>{
       const all=snap.docs.map(d=>({id:d.id,...d.data()}));
       setCheckins(all.filter(c=>c.userId===user.uid));
-      if(user.role==='admin'||(user.role==='leader'&&(lp.checkInReport||lp.exportCsv))) setAllCheckinsData(all);
+      if(user.role==='admin'||(user.role==='leader'&&(lp.checkInReport||lp.exportCsv))||(user.role==='usher'&&up.checkInReport)) setAllCheckinsData(all);
     });
     return unsub;
   },[user.uid,user.role]);
@@ -554,7 +554,7 @@ const CheckInScreen=({user,lang,lp={}})=>{
     locating:{icon:'🔍',msg:lang==='id'?'Memverifikasi lokasi...':'Verifying location...',color:th.primary},
   }[status];
 
-  const allCheckins = (user.role==='admin'||(user.role==='leader'&&(lp.checkInReport||lp.exportCsv))) ? allCheckinsData : checkins;
+  const allCheckins = (user.role==='admin'||(user.role==='leader'&&(lp.checkInReport||lp.exportCsv))||(user.role==='usher'&&up.checkInReport)) ? allCheckinsData : checkins;
   const groupedCheckins = allCheckins.reduce((acc,c)=>{
     if(!acc[c.date]) acc[c.date]=[];
     acc[c.date].push(c);
@@ -653,14 +653,14 @@ const CheckInScreen=({user,lang,lp={}})=>{
         onClick={handleCI} disabled={status==='locating'||status==='success'||!selectedLoc}
         style={{backgroundColor:status==='success'?th.success:!selectedLoc?'#ccc':th.primary,marginBottom:16}}/>
 
-      {(user.role==='admin'||(user.role==='leader'&&lp.schedule))&&(
+      {(user.role==='admin'||(user.role==='leader'&&lp.checkInReport)||(user.role==='usher'&&up.checkInReport))&&(
         <button onClick={()=>setShowReport(!showReport)}
           style={{width:'100%',backgroundColor:`${th.accent}15`,border:`2px solid ${th.accent}`,borderRadius:14,padding:'12px',cursor:'pointer',fontSize:14,fontWeight:700,color:th.primary,marginBottom:16}}>
           📊 {showReport?(lang==='id'?'Sembunyikan Report':'Hide Report'):(lang==='id'?'Lihat Report Check In':'View Check In Report')}
         </button>
       )}
 
-      {user.role==='admin'&&showReport&&(
+      {(user.role==='admin'||(user.role==='leader'&&lp.checkInReport)||(user.role==='usher'&&up.checkInReport))&&showReport&&(
         <div style={{backgroundColor:'white',borderRadius:18,padding:16,marginBottom:16,boxShadow:'0 2px 8px rgba(0,0,0,0.06)'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
             <div style={{fontSize:16,fontWeight:700}}>📊 {lang==='id'?'Report Check In':'Check In Report'}</div>
@@ -2020,7 +2020,15 @@ const AnointingScreen=({user,lang,onNav,lp={}})=>{
     setTimeout(()=>{setSubmitted(false);setView('list');},6000);
   };
 
-  const handleStatus=async(id,status)=>await updateDoc(doc(db,'anointings',id),{status});
+  const handleStatus=async(id,status)=>{
+    await updateDoc(doc(db,'anointings',id),{status});
+    if(status==='approved'){
+      const item=anointings.find(a=>a.id===id);
+      if(item){
+        await addDoc(collection(db,'notifications'),{type:'anointing_approved',title:lang==='id'?'Pengurapan Disetujui':'Anointing Approved',userId:item.userId,userName:item.userName,date:new Date().toLocaleDateString(),timestamp:new Date().toISOString(),readBy:[]});
+      }
+    }
+  };
   const statusColor=s=>s==='approved'?th.success:s==='rejected'?th.danger:th.warning;
   const statusLabel=s=>s==='approved'?(lang==='id'?'Disetujui':'Approved'):s==='rejected'?(lang==='id'?'Ditolak':'Rejected'):(lang==='id'?'Menunggu':'Pending');
 
@@ -2093,7 +2101,7 @@ const AnointingScreen=({user,lang,onNav,lp={}})=>{
               <button onClick={()=>handleStatus(a.id,'rejected')} style={{flex:1,backgroundColor:'#fff0f0',border:`1px solid ${th.danger}`,borderRadius:10,padding:'8px',color:th.danger,fontWeight:700,cursor:'pointer',fontSize:12}}>❌ {lang==='id'?'Tolak':'Reject'}</button>
             </div>
           )}
-          {(user.role==='admin'||(user.role==='leader'&&lp.approveRequest))&&a.status==='rejected'&&(
+          {(user.role==='admin'||(user.role==='leader'&&lp.approveRequest))&&(a.status==='rejected'||a.status==='approved')&&(
             <button onClick={async()=>await deleteDoc(doc(db,'anointings',a.id))} style={{width:'100%',marginTop:8,backgroundColor:'#fff0f0',border:'none',borderRadius:10,padding:'8px',color:th.danger,fontWeight:700,cursor:'pointer',fontSize:12}}>🗑 {lang==='id'?'Hapus':'Delete'}</button>
           )}
         </Card>
@@ -2428,7 +2436,7 @@ const ScanAttendanceScreen=({user,lang,lp={}})=>{
 };
 
 
-const RoleManagementScreen=({user,lang,lp,setLeaderPermissions})=>{
+const RoleManagementScreen=({user,lang,lp,setLeaderPermissions,up={},setUsherPermissions})=>{
   const [members,setMembers]=useState([]);
   const [search,setSearch]=useState('');
   const [roleFilter,setRoleFilter]=useState(null);
@@ -2445,10 +2453,18 @@ const RoleManagementScreen=({user,lang,lp,setLeaderPermissions})=>{
     await updateDoc(doc(db,'members',memberId),{role:newRole});
   };
 
+  const [permTab,setPermTab]=useState('leader');
+
   const handlePermToggle=async(key)=>{
     const newPerm={...lp,[key]:!lp[key]};
     setLeaderPermissions(newPerm);
     await setDoc(doc(db,'settings','leader_permissions'),newPerm);
+  };
+
+  const handleUsherPermToggle=async(key)=>{
+    const newPerm={...up,[key]:!up[key]};
+    setUsherPermissions(newPerm);
+    await setDoc(doc(db,'settings','usher_permissions'),newPerm);
   };
 
   const filtered=members.filter(m=>{
@@ -2467,6 +2483,10 @@ const RoleManagementScreen=({user,lang,lp,setLeaderPermissions})=>{
     checkInReport:lang==='id'?'Lihat Laporan Check In':'View Check In Report',
     approveRequest:lang==='id'?'Approve/Reject Request':'Approve/Reject Request',
     exportCsv:lang==='id'?'Export CSV':'Export CSV',
+  };
+
+  const usherPermLabels={
+    checkInReport:lang==='id'?'Lihat Laporan Check In':'View Check In Report',
   };
 
   return(
@@ -2492,15 +2512,36 @@ const RoleManagementScreen=({user,lang,lp,setLeaderPermissions})=>{
         </div>
       </div>
       <Card>
-        <div style={{fontSize:14,fontWeight:700,color:'#7c3aed',marginBottom:12}}>🔑 {lang==='id'?'Permission Leader':'Leader Permissions'}</div>
-        {Object.entries(permLabels).map(([key,label])=>(
-          <div key={key} style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingVertical:8,marginBottom:10}}>
-            <span style={{fontSize:13,color:th.text}}>{label}</span>
-            <div onClick={()=>handlePermToggle(key)} style={{width:44,height:24,borderRadius:12,backgroundColor:lp[key]?'#7c3aed':th.border,cursor:'pointer',position:'relative',transition:'background 0.2s'}}>
-              <div style={{position:'absolute',top:2,left:lp[key]?22:2,width:20,height:20,borderRadius:10,backgroundColor:'white',transition:'left 0.2s'}}/>
-            </div>
-          </div>
-        ))}
+        <div style={{display:'flex',marginBottom:14,borderRadius:12,overflow:'hidden',border:`2px solid ${th.border}`}}>
+          <button onClick={()=>setPermTab('leader')} style={{flex:1,padding:'10px',border:'none',backgroundColor:permTab==='leader'?'#7c3aed':'white',color:permTab==='leader'?'white':th.textMid,fontWeight:700,fontSize:13,cursor:'pointer'}}>🔑 Leader</button>
+          <button onClick={()=>setPermTab('usher')} style={{flex:1,padding:'10px',border:'none',backgroundColor:permTab==='usher'?'#dd6b20':'white',color:permTab==='usher'?'white':th.textMid,fontWeight:700,fontSize:13,cursor:'pointer'}}>🔑 Usher</button>
+        </div>
+        {permTab==='leader'?(
+          <>
+            <div style={{fontSize:13,fontWeight:700,color:'#7c3aed',marginBottom:12}}>{lang==='id'?'Permission Leader':'Leader Permissions'}</div>
+            {Object.entries(permLabels).map(([key,label])=>(
+              <div key={key} style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingVertical:8,marginBottom:10}}>
+                <span style={{fontSize:13,color:th.text}}>{label}</span>
+                <div onClick={()=>handlePermToggle(key)} style={{width:44,height:24,borderRadius:12,backgroundColor:lp[key]?'#7c3aed':th.border,cursor:'pointer',position:'relative',transition:'background 0.2s'}}>
+                  <div style={{position:'absolute',top:2,left:lp[key]?22:2,width:20,height:20,borderRadius:10,backgroundColor:'white',transition:'left 0.2s'}}/>
+                </div>
+              </div>
+            ))}
+          </>
+        ):(
+          <>
+            <div style={{fontSize:13,fontWeight:700,color:'#dd6b20',marginBottom:4}}>{lang==='id'?'Permission Usher':'Usher Permissions'}</div>
+            <div style={{fontSize:11,color:th.textMid,marginBottom:12}}>{lang==='id'?'Usher sudah otomatis bisa Scan Absensi':'Usher can already Scan Attendance by default'}</div>
+            {Object.entries(usherPermLabels).map(([key,label])=>(
+              <div key={key} style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingVertical:8,marginBottom:10}}>
+                <span style={{fontSize:13,color:th.text}}>{label}</span>
+                <div onClick={()=>handleUsherPermToggle(key)} style={{width:44,height:24,borderRadius:12,backgroundColor:up[key]?'#dd6b20':th.border,cursor:'pointer',position:'relative',transition:'background 0.2s'}}>
+                  <div style={{position:'absolute',top:2,left:up[key]?22:2,width:20,height:20,borderRadius:10,backgroundColor:'white',transition:'left 0.2s'}}/>
+                </div>
+              </div>
+            ))}
+          </>
+        )}
       </Card>
       <Inp value={search} onChange={setSearch} placeholder={lang==='id'?'Cari nama atau email...':'Search name or email...'}/>
       {[...filtered].sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map((m,idx)=>{
@@ -2563,6 +2604,7 @@ export default function App(){
   const [notifications,setNotifications]=useState([]);
   const [loaded,setLoaded]=useState(false);
   const [leaderPermissions,setLeaderPermissions]=useState({bulletin:false,schedule:false,scanAttendance:false,checkInReport:false,approveRequest:false,exportCsv:false});
+  const [usherPermissions,setUsherPermissions]=useState({checkInReport:false});
 
   useEffect(()=>{
     const unsub=onAuthStateChanged(auth,async fireUser=>{
@@ -2585,6 +2627,13 @@ export default function App(){
   },[]);
 
   useEffect(()=>{
+    const unsub=onSnapshot(doc(db,'settings','usher_permissions'),snap=>{
+      if(snap.exists()) setUsherPermissions(snap.data());
+    });
+    return unsub;
+  },[]);
+
+  useEffect(()=>{
     if(!user)return;
     const unsub=onSnapshot(collection(db,'notifications'),snap=>{
       const all=snap.docs.map(d=>({id:d.id,...d.data()}));
@@ -2593,6 +2642,7 @@ export default function App(){
         if(n.readBy===undefined && n.read) return false;
         // Notif baru: per-user readBy array
         if(n.readBy && n.readBy.includes(user.uid)) return false;
+        if(n.type==='anointing_approved') return n.userId===user.uid;
         if(user.role==='admin') return true;
         if(n.type==='admin_message'){
           if(n.targets==='all') return true;
@@ -2636,14 +2686,14 @@ export default function App(){
   const renderScreen=()=>{
     switch(activeTab){
       case 'home':      return <HomeScreen user={user} onNav={(tab,data)=>{ if(tab==='bulletin'&&data){ setDirectBulletinPost(data); } setActiveTab(tab); }} lang={lang} lp={leaderPermissions}/>;
-      case 'checkin':   return <CheckInScreen user={user} lang={lang} lp={leaderPermissions}/>;
+      case 'checkin':   return <CheckInScreen user={user} lang={lang} lp={leaderPermissions} up={usherPermissions}/>;
       case 'give':      return <GiveScreen user={user} lang={lang}/>;
       case 'schedule':  return <ScheduleScreen key={scheduleKey} user={user} lang={lang} lp={leaderPermissions}/>;
       case 'bulletin':  return <BulletinScreen user={user} lang={lang} directPost={directBulletinPost} clearDirectPost={()=>setDirectBulletinPost(null)} lp={leaderPermissions} onNav={(tab)=>setActiveTab(tab)}/>;
       case 'request':   return <RequestScreen user={user} lang={lang} lp={leaderPermissions} onNav={(tab)=>setActiveTab(tab)}/>;
       case 'volunteer': return <VolunteerScreen user={user} lang={lang} onNav={(tab)=>setActiveTab(tab)} lp={leaderPermissions}/>;
       case 'scan':      return <ScanAttendanceScreen user={user} lang={lang} lp={leaderPermissions}/>;
-      case 'roles':     return <RoleManagementScreen user={user} lang={lang} lp={leaderPermissions} setLeaderPermissions={setLeaderPermissions}/>;
+      case 'roles':     return <RoleManagementScreen user={user} lang={lang} lp={leaderPermissions} setLeaderPermissions={setLeaderPermissions} up={usherPermissions} setUsherPermissions={setUsherPermissions}/>;
       case 'anointing':  return <AnointingScreen user={user} lang={lang} onNav={(tab)=>setActiveTab(tab)} lp={leaderPermissions}/>;
       case 'classes':   return <ClassesScreen user={user} lang={lang} onNav={(tab)=>setActiveTab(tab)}/>;
       case 'notify':    return <SendNotificationScreen user={user} lang={lang}/>;
@@ -2670,17 +2720,28 @@ export default function App(){
           {notifications.filter(n=>!clearedNotifs.includes(n.id)).length===0
             ?<div style={{textAlign:'center',padding:48}}><div style={{fontSize:40,marginBottom:12}}>🔔</div><div style={{fontSize:16,fontWeight:700,color:th.textMid}}>{lang==='id'?'Tidak ada notifikasi':'No notifications'}</div></div>
             :notifications.filter(n=>!clearedNotifs.includes(n.id)).map(n=>{
-              const icon=n.type==='new_member'?'🎉':n.type==='new_request'?'📝':n.type==='admin_message'?'📣':n.type==='new_class_registration'?'📚':n.type==='new_report'?'📄':n.type==='new_bulletin'?'📰':n.type==='new_anointing'?'🕊️':'🙋';
-              const color=n.type==='new_member'?th.success:n.type==='new_request'?th.primary:n.type==='admin_message'?th.primary:n.type==='new_class_registration'?'#805ad5':n.type==='new_report'?'#2c7a7b':n.type==='new_bulletin'?'#1a3a6b':n.type==='new_anointing'?'#4f46e5':'#dd6b20';
-              const title=n.type==='new_member'?(lang==='id'?'Member Baru':'New Member'):n.type==='new_request'?(lang==='id'?'Permohonan Baru':'New Request'):n.type==='admin_message'?(n.title||'Pesan dari Admin'):n.type==='new_class_registration'?(lang==='id'?'Pendaftaran Kelas':'Class Registration'):n.type==='new_report'?(lang==='id'?'Laporan Baru':'New Report'):n.type==='new_bulletin'?(lang==='id'?'Postingan Baru':'New Post'):n.type==='new_anointing'?(lang==='id'?'Pendaftaran Pengurapan':'Anointing Registration'):(lang==='id'?'Volunteer Baru':'New Volunteer');
+              const icon=n.type==='new_member'?'🎉':n.type==='new_request'?'📝':n.type==='admin_message'?'📣':n.type==='new_class_registration'?'📚':n.type==='new_report'?'📄':n.type==='new_bulletin'?'📰':n.type==='new_anointing'?'🕊️':n.type==='anointing_approved'?'🙌':'🙋';
+              const color=n.type==='new_member'?th.success:n.type==='new_request'?th.primary:n.type==='admin_message'?th.primary:n.type==='new_class_registration'?'#805ad5':n.type==='new_report'?'#2c7a7b':n.type==='new_bulletin'?'#1a3a6b':n.type==='new_anointing'?'#4f46e5':n.type==='anointing_approved'?th.success:'#dd6b20';
+              const title=n.type==='new_member'?(lang==='id'?'Member Baru':'New Member'):n.type==='new_request'?(lang==='id'?'Permohonan Baru':'New Request'):n.type==='admin_message'?(n.title||'Pesan dari Admin'):n.type==='new_class_registration'?(lang==='id'?'Pendaftaran Kelas':'Class Registration'):n.type==='new_report'?(lang==='id'?'Laporan Baru':'New Report'):n.type==='new_bulletin'?(lang==='id'?'Postingan Baru':'New Post'):n.type==='new_anointing'?(lang==='id'?'Pendaftaran Pengurapan':'Anointing Registration'):n.type==='anointing_approved'?(n.title||(lang==='id'?'Pengurapan Disetujui':'Anointing Approved')):(lang==='id'?'Volunteer Baru':'New Volunteer');
               return(
-                <div key={n.id} onClick={n.type==='new_bulletin'?()=>{
+                <div key={n.id} onClick={()=>{
+                  const navMap={
+                    new_bulletin:'bulletin', new_member:'roles', new_request:'request',
+                    new_volunteer:'volunteer', new_class_registration:'classes',
+                    new_report:'report', new_anointing:'anointing', anointing_approved:'anointing'
+                  };
+                  const tab=navMap[n.type];
+                  if(!tab) return;
                   setShowNotif(false);
-                  setActiveTab('bulletin');
-                  setDirectBulletinPost({cat:n.cat||'announcement',subType:n.subType||null,_categoryOnly:true});
+                  if(n.type==='new_bulletin'){
+                    setActiveTab('bulletin');
+                    setDirectBulletinPost({cat:n.cat||'announcement',subType:n.subType||null,_categoryOnly:true});
+                  }else{
+                    setActiveTab(tab);
+                  }
                   setClearedNotifs(prev=>[...prev,n.id]);
                   updateDoc(doc(db,'notifications',n.id),{readBy:arrayUnion(user.uid)});
-                }:undefined} style={{backgroundColor:'white',borderRadius:18,padding:16,marginBottom:10,boxShadow:'0 2px 6px rgba(0,0,0,0.05)',borderLeft:`4px solid ${color}`,cursor:n.type==='new_bulletin'?'pointer':'default'}}>
+                }} style={{backgroundColor:'white',borderRadius:18,padding:16,marginBottom:10,boxShadow:'0 2px 6px rgba(0,0,0,0.05)',borderLeft:`4px solid ${color}`,cursor:'pointer'}}>
                   <div style={{display:'flex',gap:12,alignItems:'center'}}>
                     <span style={{fontSize:32}}>{icon}</span>
                     <div style={{flex:1}}>

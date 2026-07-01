@@ -238,6 +238,30 @@ const RegisterScreen=({lang,setLang,onBack,onRegistered})=>{
 const HomeScreen=({user,onNav,lang,lp={}})=>{
   const [eventPosts,setEventPosts]=useState([]);
   const [showAppQR,setShowAppQR]=useState(false);
+  const [marqueeText,setMarqueeText]=useState('');
+  const [showMarqueeEdit,setShowMarqueeEdit]=useState(false);
+  const [marqueeInput,setMarqueeInput]=useState('');
+
+  const [marqueeDisplay,setMarqueeDisplay]=useState('');
+
+  useEffect(()=>{
+    const unsub=onSnapshot(doc(db,'settings','announcement_marquee'),snap=>{
+      if(snap.exists()) setMarqueeText(snap.data().text||'');
+    });
+    return unsub;
+  },[]);
+
+  useEffect(()=>{
+    if(!marqueeText){setMarqueeDisplay('');return;}
+    const targetLang=lang==='id'?'id':'en';
+    fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(marqueeText)}`)
+      .then(res=>res.json())
+      .then(data=>{
+        const translated=data[0].map(seg=>seg[0]).join('');
+        setMarqueeDisplay(translated);
+      })
+      .catch(()=>setMarqueeDisplay(marqueeText));
+  },[marqueeText,lang]);
   const [todayDevo,setTodayDevo]=useState(null);
   useEffect(()=>{
     const days=['sun','mon','tue','wed','thu','fri','sat'];
@@ -312,6 +336,18 @@ const HomeScreen=({user,onNav,lang,lp={}})=>{
   return(
     <div style={S.screen}>
       <div style={{padding:16,paddingBottom:200}}>
+        {marqueeDisplay&&(
+          <div onClick={()=>{if(user.role==='admin'){setMarqueeInput(marqueeText);setShowMarqueeEdit(true);}}} style={{backgroundColor:'#fff3cd',border:'1.5px solid #f0c95a',borderRadius:14,padding:'10px 0',marginBottom:14,overflow:'hidden',whiteSpace:'nowrap',cursor:user.role==='admin'?'pointer':'default'}}>
+            <div style={{display:'inline-block',paddingLeft:'100%',animation:'marqueeScroll 18s linear infinite',fontSize:13,fontWeight:700,color:'#8a6d1a'}}>
+              📢 {marqueeDisplay}
+            </div>
+          </div>
+        )}
+        {user.role==='admin'&&!marqueeText&&(
+          <div onClick={()=>{setMarqueeInput('');setShowMarqueeEdit(true);}} style={{backgroundColor:'#f8f8f8',border:`1.5px dashed ${th.border}`,borderRadius:14,padding:'10px 14px',marginBottom:14,cursor:'pointer',textAlign:'center'}}>
+            <span style={{fontSize:12,color:th.textMid,fontWeight:600}}>+ {lang==='id'?'Tambah Pengumuman Berjalan':'Add Running Announcement'}</span>
+          </div>
+        )}
         <div style={{backgroundColor:th.primary,borderRadius:24,padding:22,boxShadow:`0 6px 16px ${th.primary}40`,marginBottom:16}}>
           <div style={{color:'rgba(255,255,255,0.65)',fontSize:13}}>{greeting},</div>
           <div style={{color:'white',fontSize:22,fontWeight:800,margin:'2px 0 10px'}}>{user.name||user.email}</div>
@@ -429,6 +465,19 @@ const HomeScreen=({user,onNav,lang,lp={}})=>{
             </button>
           </div>
         )}
+      <style>{`@keyframes marqueeScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-100%); } }`}</style>
+      {showMarqueeEdit&&(
+        <div style={{position:'fixed',top:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:430,height:'100vh',backgroundColor:'rgba(0,0,0,0.7)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowMarqueeEdit(false)}>
+          <div style={{backgroundColor:'white',borderRadius:24,padding:24,margin:20,width:'calc(100% - 40px)'}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:16,fontWeight:700,color:th.primary,marginBottom:14}}>📢 {lang==='id'?'Edit Pengumuman Berjalan':'Edit Running Announcement'}</div>
+            <textarea value={marqueeInput} onChange={e=>setMarqueeInput(e.target.value)} placeholder={lang==='id'?'Tulis pengumuman...':'Write announcement...'} rows={3} style={{...S.inp,height:80,resize:'vertical',marginBottom:14}}/>
+            <div style={{display:'flex',gap:8}}>
+              {marqueeText&&<button onClick={async()=>{await setDoc(doc(db,'settings','announcement_marquee'),{text:''});setShowMarqueeEdit(false);}} style={{flex:1,backgroundColor:'#fff0f0',border:`1px solid ${th.danger}`,borderRadius:12,padding:'10px',color:th.danger,fontWeight:700,fontSize:13,cursor:'pointer'}}>🗑 {lang==='id'?'Hapus':'Remove'}</button>}
+              <button onClick={async()=>{await setDoc(doc(db,'settings','announcement_marquee'),{text:marqueeInput});setShowMarqueeEdit(false);}} style={{flex:1,backgroundColor:th.primary,border:'none',borderRadius:12,padding:'10px',color:'white',fontWeight:700,fontSize:13,cursor:'pointer'}}>{lang==='id'?'Simpan':'Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showAppQR&&(
         <div style={{position:'fixed',top:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:430,height:'100vh',backgroundColor:'rgba(0,0,0,0.7)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowAppQR(false)}>
           <div style={{backgroundColor:'white',borderRadius:24,padding:32,textAlign:'center',margin:20}} onClick={e=>e.stopPropagation()}>

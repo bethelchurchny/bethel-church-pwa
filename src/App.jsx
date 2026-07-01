@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 import { auth, db, storage, messaging, getToken, VAPID_KEY } from './firebase';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
@@ -2326,15 +2326,20 @@ const ScanAttendanceScreen=({user,lang,lp={}})=>{
   const startScanning=()=>{
     setScanning(true);
     setTimeout(()=>{
-      const scanner=new Html5QrcodeScanner('qr-reader',{fps:10,qrbox:250,rememberLastUsedCamera:true,videoConstraints:{facingMode:'environment'}},false);
-      scanner.render(onScanSuccess, ()=>{});
+      const scanner=new Html5Qrcode('qr-reader');
       scannerRef.current=scanner;
+      scanner.start(
+        {facingMode:'environment'},
+        {fps:10,qrbox:250},
+        onScanSuccess,
+        ()=>{}
+      ).catch(()=>{setScanning(false);});
     },100);
   };
 
   const stopScanning=()=>{
     if(scannerRef.current){
-      scannerRef.current.clear().catch(()=>{});
+      scannerRef.current.stop().then(()=>{scannerRef.current.clear();}).catch(()=>{});
       scannerRef.current=null;
     }
     setScanning(false);

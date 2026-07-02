@@ -291,8 +291,9 @@ const HomeScreen=({user,onNav,lang,lp={}})=>{
       const members = snap.docs.map(d=>d.data());
       
       // Build CSV
-      const headers = ['Name','Email','Phone','Address','Join Date','Birth Date','Baptism Date','First Church Date','Role'];
-      const rows = members.map(m=>[
+      const headers = ['No','Name','Email','Phone','Address','Join Date','Birth Date','Baptism Date','First Church Date','Role'];
+      const rows = members.map((m,i)=>[
+        i+1,
         m.name||'',
         m.email||'',
         m.phone||'',
@@ -860,7 +861,31 @@ const ScheduleScreen=({user,lang,lp={}})=>{
 
   if(selectedType){
     const cfg=typeConfig[selectedType]||{label:selectedType,emoji:'📅',bg:'#e8eef8',color:th.primary,desc:''};
-    const items=allSchedules.filter(s=>s.type===selectedType);
+    const items=allSchedules.filter(s=>s.type===selectedType).sort((a,b)=>{
+      if(selectedType==='cool') return (a.sortOrder??999)-(b.sortOrder??999);
+      return 0;
+    });
+    const moveCool=async(id,direction)=>{
+      const coolItems=[...items];
+      const idx=coolItems.findIndex(c=>(c.originalRecurringId||c.id)===id);
+      const swapIdx=direction==='up'?idx-1:idx+1;
+      if(swapIdx<0||swapIdx>=coolItems.length)return;
+      const current=coolItems[idx];
+      const swap=coolItems[swapIdx];
+      const currentOrder=current.sortOrder??idx;
+      const swapOrder=swap.sortOrder??swapIdx;
+      const currentId=current.originalRecurringId||current.id;
+      const swapId=swap.originalRecurringId||swap.id;
+      await updateDoc(doc(db,'schedules',currentId),{sortOrder:swapOrder});
+      await updateDoc(doc(db,'schedules',swapId),{sortOrder:currentOrder});
+    };
+    const resetCoolOrder=async()=>{
+      const coolItems=[...items];
+      await Promise.all(coolItems.map((c,i)=>{
+        const id=c.originalRecurringId||c.id;
+        return updateDoc(doc(db,'schedules',id),{sortOrder:i});
+      }));
+    };
     return(
       <div style={S.screen}>
         <div style={{backgroundColor:cfg.color,padding:'20px 20px 24px',borderRadius:24,margin:16,marginBottom:0}}>
@@ -875,6 +900,11 @@ const ScheduleScreen=({user,lang,lp={}})=>{
               <div style={{color:'rgba(255,255,255,0.7)',fontSize:13,marginTop:2}}>{cfg.desc}</div>
             </div>
           </div>
+          {selectedType==='cool'&&(user.role==='admin'||(user.role==='leader'&&lp.schedule))&&(
+            <div onClick={resetCoolOrder} style={{display:'inline-block',backgroundColor:'rgba(255,255,255,0.2)',borderRadius:12,padding:'6px 12px',cursor:'pointer',marginTop:4}}>
+              <span style={{color:'white',fontSize:11,fontWeight:700}}>🔄 {lang==='id'?'Reset Urutan':'Reset Order'}</span>
+            </div>
+          )}
         </div>
         <div style={{padding:16}}>
           {(user.role==='admin'||(user.role==='leader'&&lp.schedule))&&(
@@ -929,7 +959,11 @@ const ScheduleScreen=({user,lang,lp={}})=>{
                     <div style={{fontSize:12,color:th.textMid}}>🕐 {s.time}</div>
                     {s.type!=='cool'&&s.location&&<div style={{fontSize:11,color:th.textLight,marginTop:2}}>📍 {s.location}</div>}
                     {s.type==='cool'&&(s.contact||s.phone)&&<div style={{fontSize:12,color:cfg.color,marginTop:4}}>{s.contact?`👤 ${s.contact}`:''}{s.contact&&s.phone?' · ':''}{s.phone?`📞 ${s.phone}`:''}</div>}
-                    {(user.role==='admin'||(user.role==='leader'&&lp.schedule))&&<div style={{display:'flex',gap:14,marginTop:6}}>
+                    {(user.role==='admin'||(user.role==='leader'&&lp.schedule))&&<div style={{display:'flex',gap:14,marginTop:6,alignItems:'center'}}>
+                      {s.type==='cool'&&<>
+                        <span onClick={()=>moveCool(s.originalRecurringId||s.id,'up')} style={{fontSize:16,color:th.primary,fontWeight:700,cursor:'pointer'}}>↑</span>
+                        <span onClick={()=>moveCool(s.originalRecurringId||s.id,'down')} style={{fontSize:16,color:th.primary,fontWeight:700,cursor:'pointer'}}>↓</span>
+                      </>}
                       <span onClick={()=>{setEditingId(s.originalRecurringId||s.id);setAddTitle(s.title);setAddDate(s.date);setAddTime(s.time);setAddType(s.type);setAddContact(s.contact||'');setAddPhone(s.phone||'');setAddLocation(s.location||'87-07 Justice Ave, Elmhurst, NY');setShowAdd(true);}} style={{fontSize:11,color:th.primary,fontWeight:600,cursor:'pointer'}}>✏️ Edit</span>
                       <span onClick={()=>handleDelete(s.originalRecurringId||s.id)} style={{fontSize:11,color:th.danger,fontWeight:600,cursor:'pointer'}}>🗑 Delete</span>
                     </div>}
@@ -1637,8 +1671,8 @@ const VolunteerScreen=({user,lang,onNav,lp={}})=>{
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
           <div style={{fontSize:14,fontWeight:700}}>👥 {lang==='id'?'Daftar Volunteer':'Volunteer List'} ({allVolunteers.length})</div>
           {(user.role==='admin'||(user.role==='leader'&&lp.exportCsv))&&allVolunteers.length>0&&<button onClick={()=>{
-            const headers=['Name','Email','Phone','Ministries','Date'];
-            const rows=allVolunteers.map(v=>[v.userName||'',v.userEmail||'',v.userPhone||'-',(v.ministries||[]).join('; '),v.date||'']);
+            const headers=['No','Name','Email','Phone','Ministries','Date'];
+            const rows=allVolunteers.map((v,i)=>[i+1,v.userName||'',v.userEmail||'',v.userPhone||'-',(v.ministries||[]).join('; '),v.date||'']);
             const csv=[headers,...rows].map(r=>r.map(x=>`"${x}"`).join(',')).join('\n');
             const blob=new Blob([csv],{type:'text/csv'});
             const url=URL.createObjectURL(blob);
@@ -1909,8 +1943,8 @@ const ReportScreen=({user,lang,lp={},onNav})=>{
 
       {user.role==='admin'&&reports.length>0&&(
         <button onClick={()=>{
-          const headers=['Date','Type','Title','Periode','Mentor','Mentee','Tempat-Waktu','Note','Content','By'];
-          const rows=reports.map(r=>[r.date,r.type,r.title||'',r.periode||'',r.mentor||'',r.mentee||'',r.tempatWaktu||'',r.note||'',r.content||'',r.userName]);
+          const headers=['No','Date','Type','Title','Periode','Mentor','Mentee','Tempat-Waktu','Note','Content','By'];
+          const rows=reports.map((r,i)=>[i+1,r.date,r.type,r.title||'',r.periode||'',r.mentor||'',r.mentee||'',r.tempatWaktu||'',r.note||'',r.content||'',r.userName]);
           const csv=[headers,...rows].map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
           const blob=new Blob([csv],{type:'text/csv'});
           const url=URL.createObjectURL(blob);
@@ -2082,8 +2116,8 @@ const AnointingScreen=({user,lang,onNav,lp={}})=>{
   const statusLabel=s=>s==='approved'?(lang==='id'?'Disetujui':'Approved'):s==='rejected'?(lang==='id'?'Ditolak':'Rejected'):(lang==='id'?'Menunggu':'Pending');
 
   const exportCSV=()=>{
-    const headers=['Name','Phone','Email','Note','Status','Date'];
-    const rows=anointings.map(a=>[a.name||'',a.phone||'',a.userEmail||'',a.note||'',a.status||'pending',a.date||'']);
+    const headers=['No','Name','Phone','Email','Note','Status','Date'];
+    const rows=anointings.map((a,i)=>[i+1,a.name||'',a.phone||'',a.userEmail||'',a.note||'',a.status||'pending',a.date||'']);
     const csv=[headers,...rows].map(r=>r.map(x=>`"${x}"`).join(',')).join('\n');
     const blob=new Blob([csv],{type:'text/csv'});
     const url=URL.createObjectURL(blob);
@@ -2371,7 +2405,7 @@ const ScanAttendanceScreen=({user,lang,lp={}})=>{
       scannedUidsRef.current.add(data.uid);
       await addDoc(collection(db,'attendance'),{
         eventId:selectedEvent.id, eventName:selectedEvent.name,
-        userId:data.uid, userName:data.name, userEmail:data.email||'', userRole:data.role||'member',
+        userId:data.uid, userName:data.name, userEmail:data.email||'',
         date:new Date().toLocaleDateString(), timestamp:new Date().toISOString()
       });
       setLastScan({error:false,msg:data.name});
@@ -2383,8 +2417,9 @@ const ScanAttendanceScreen=({user,lang,lp={}})=>{
   };
 
   const exportAttendance=()=>{
-    const headers=['Name','Email','Role','Time'];
-    const rows=scannedList.map(s=>[s.userName,s.userEmail,s.userRole,new Date(s.timestamp).toLocaleTimeString()]);
+    const headers=['No','Name','Email','Time'];
+    const sorted=[...scannedList].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
+    const rows=sorted.map((s,i)=>[i+1,s.userName,s.userEmail,new Date(s.timestamp).toLocaleTimeString()]);
     const csv=[headers,...rows].map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
     const blob=new Blob([csv],{type:'text/csv'});
     const url=URL.createObjectURL(blob);
@@ -2863,12 +2898,11 @@ const ProfileScreen=({user,setUser,lang})=>{
       {showQR&&(
         <div style={{position:'fixed',top:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:430,height:'100vh',backgroundColor:'rgba(0,0,0,0.85)',zIndex:1000,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
           <div style={{backgroundColor:'white',borderRadius:24,padding:32,textAlign:'center',margin:24}}>
-            <span style={{backgroundColor:`${th.primary}15`,borderRadius:20,padding:'5px 14px',color:th.primary,fontSize:12,fontWeight:700,letterSpacing:1,marginBottom:12,display:'inline-block'}}>{(user.role||'MEMBER').toUpperCase()}</span>
-            <div style={{fontSize:18,fontWeight:700,color:th.primary,marginBottom:4}}>{user.name}</div>
+            <div style={{fontSize:18,fontWeight:700,color:th.primary,marginTop:8,marginBottom:4}}>{user.name}</div>
             <div style={{fontSize:13,color:th.textMid,marginBottom:20}}>{user.email}</div>
             <div style={{display:'flex',justifyContent:'center',marginBottom:20}}>
               <QRCode
-                value={JSON.stringify({uid:user.uid,name:user.name,email:user.email,role:user.role,church:'Bethel International Church NY'})}
+                value={JSON.stringify({uid:user.uid,name:user.name,email:user.email})}
                 size={200}
                 level="H"
                 includeMargin={true}

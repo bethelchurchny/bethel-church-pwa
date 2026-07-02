@@ -1226,6 +1226,18 @@ const BulletinScreen=({user,lang,directPost,clearDirectPost,lp={},onNav})=>{
             <img src={LOGO_URL} style={{width:24,height:24,borderRadius:12,objectFit:'contain'}} alt="logo" onError={e=>e.target.style.display='none'}/>
             <div><div style={{fontSize:13,fontWeight:700,color:th.primary}}>Bethel International Church</div><div style={{fontSize:11,color:th.textLight}}>Elmhurst, New York</div></div>
           </div>
+          {selectedPost.subType==='daily_devotional'&&(
+            (selectedPost.readBy||[]).includes(user.uid)?(
+              <div style={{width:'100%',marginTop:16,backgroundColor:'#f0fff4',border:`1.5px solid ${th.success}`,borderRadius:14,padding:14,textAlign:'center'}}>
+                <span style={{color:th.success,fontWeight:700,fontSize:14}}>✅ {lang==='id'?'Sudah Dibaca':'Already Read'}</span>
+              </div>
+            ):(
+              <button onClick={async()=>{
+                await updateDoc(doc(db,'bulletins',selectedPost.id),{readBy:arrayUnion(user.uid)});
+                setSelectedPost({...selectedPost,readBy:[...(selectedPost.readBy||[]),user.uid]});
+              }} style={{width:'100%',marginTop:16,backgroundColor:`${th.success}10`,border:`1.5px solid ${th.success}`,borderRadius:14,padding:14,color:th.success,fontWeight:700,cursor:'pointer',fontSize:14}}>✓ {lang==='id'?'Tandai Sudah Dibaca':'Mark as Read'}</button>
+            )
+          )}
           <button onClick={()=>{setSelectedPost(null);if(selectedPost?.subType==='reading_plan')setSelectedSubType(null);}} style={{width:'100%',marginTop:16,backgroundColor:cfg.bg,border:'none',borderRadius:14,padding:14,color:cfg.color,fontWeight:700,cursor:'pointer',fontSize:14}}>← {lang==='id'?'Kembali':'Back'}</button>
           {(user.role==='admin'||(user.role==='leader'&&lp.bulletin))&&selectedPost.subType==='reading_plan'&&<button onClick={()=>handleEditClick(selectedPost)} style={{width:'100%',marginTop:10,backgroundColor:`${th.primary}10`,border:`1px solid ${th.primary}30`,borderRadius:14,padding:14,color:th.primary,fontWeight:700,cursor:'pointer',fontSize:14}}>✏️ {lang==='id'?'Edit Post':'Edit Post'}</button>}
           {(user.role==='admin'||(user.role==='leader'&&lp.bulletin))&&<button onClick={async()=>{await handleDelete(selectedPost.id);setSelectedPost(null);if(selectedPost.subType==='reading_plan')setSelectedSubType(null);}} style={{width:'100%',marginTop:10,backgroundColor:'#fff0f0',border:`1px solid ${th.danger}30`,borderRadius:14,padding:14,color:th.danger,fontWeight:700,cursor:'pointer',fontSize:14}}>🗑 {lang==='id'?'Hapus Post':'Delete Post'}</button>}
@@ -1434,6 +1446,7 @@ const BulletinScreen=({user,lang,directPost,clearDirectPost,lp={},onNav})=>{
               <div key={b.id} style={{backgroundColor:'white',borderRadius:18,marginBottom:10,padding:16,boxShadow:'0 2px 6px rgba(0,0,0,0.05)',borderLeft:`4px solid ${cfg.color}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                 <div onClick={()=>setSelectedPost(b)} style={{flex:1,cursor:'pointer'}}>
                   <div style={{fontSize:15,fontWeight:700}}>
+                    {b.subType==='daily_devotional'&&(b.readBy||[]).includes(user.uid)&&<span style={{marginRight:4}}>✅</span>}
                     {b.subType==='daily_devotional'&&b.dayOfWeek&&<span style={{color:th.accent}}>{({mon:lang==='id'?'Senin':'Mon',tue:lang==='id'?'Selasa':'Tue',wed:lang==='id'?'Rabu':'Wed',thu:lang==='id'?'Kamis':'Thu',fri:lang==='id'?'Jumat':'Fri',sat:lang==='id'?'Sabtu':'Sat',sun:lang==='id'?'Minggu':'Sun'})[b.dayOfWeek]} - </span>}
                     {(lang==='id'?(b.titleId||b.title):(b.title||b.titleId))||dispContent?.slice(0,60)}
                   </div>
